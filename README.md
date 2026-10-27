@@ -1,7 +1,7 @@
 # Let's Flow
 
 Aplicativo Android para preparar, enviar e assinar documentos PDF pelo celular.
-Projeto do Challenge FIAP 2TDSO em parceria com a LetsSign (Sprint 1).
+Projeto do Challenge FIAP 2TDSOS em parceria com a LetsSign (Sprint 1).
 
 ## Como funciona
 
@@ -42,5 +42,5 @@ Os campos de assinatura são salvos em proporção da página (0 a 1), e não em
 - Angelo Romano
 - Amanda Uechi
 - Mariana Malvão
--
--
+- Grace camara
+- aniole

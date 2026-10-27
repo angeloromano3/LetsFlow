@@ -49,11 +49,15 @@ fun NovoDocumentoScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Repositórios criados uma vez só; depois isso vai pra um ViewModel
+    // Repositórios criados uma vez só; depois isso vai para um ViewModel
     val db = remember { AppDatabase.getInstance(context) }
     val usuarioRepository = remember { UsuarioRepository(db.usuarioDao()) }
     val documentoRepository = remember {
-        DocumentoRepository(db.documentoDao(), db.documentoSignatarioDao(), db.campoAssinaturaDao())
+        DocumentoRepository(
+            db.documentoDao(),
+            db.documentoSignatarioDao(),
+            db.campoAssinaturaDao(),
+            db.eventoDao())
     }
     val arquivoPdf = remember { ArquivoPdf(context) }
 
@@ -127,7 +131,8 @@ fun NovoDocumentoScreen(
                                     FilterChip(
                                         selected = papel == opcao,
                                         onClick = { selecionados[usuario.id] = opcao },
-                                        label = { Text(opcao.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                                        label = { Text(opcao.name.lowercase().
+                                        replaceFirstChar { it.uppercase() }) }
                                     )
                                 }
                             }
@@ -150,7 +155,9 @@ fun NovoDocumentoScreen(
                     return@Button
                 }
                 scope.launch {
-                    documentoRepository.salvarRascunho(titulo, caminho, adminId, selecionados.toMap())
+                    documentoRepository.salvarRascunho(titulo, caminho,
+                        adminId,
+                        selecionados.toMap())
                         .onSuccess { onSalvo(it) }
                         .onFailure { mensagem = it.message }
                 }

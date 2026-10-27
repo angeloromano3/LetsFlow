@@ -3,20 +3,26 @@ package br.com.fiap.letsflow.data.repository
 import br.com.fiap.letsflow.data.local.dao.CampoAssinaturaDao
 import br.com.fiap.letsflow.data.local.dao.DocumentoDao
 import br.com.fiap.letsflow.data.local.dao.DocumentoSignatarioDao
+import br.com.fiap.letsflow.data.local.dao.EventoDao
 import br.com.fiap.letsflow.data.local.entity.Documento
 import br.com.fiap.letsflow.data.local.entity.DocumentoSignatario
+import br.com.fiap.letsflow.data.local.entity.Evento
 import br.com.fiap.letsflow.data.local.entity.Papel
 import br.com.fiap.letsflow.data.local.entity.StatusDocumento
+import br.com.fiap.letsflow.data.local.entity.TipoEvento
 
 class DocumentoRepository(
     private val documentoDao: DocumentoDao,
     private val documentoSignatarioDao: DocumentoSignatarioDao,
-    private val campoAssinaturaDao: CampoAssinaturaDao
+    private val campoAssinaturaDao: CampoAssinaturaDao,
+    private val eventoDao: EventoDao // Grava o histórico usado na tela de acompanhamento
 ) {
 
     fun listarDoAdmin(adminId: Long) = documentoDao.listarDoAdmin(adminId)
 
     fun listarRecebidos(usuarioId: Long) = documentoDao.listarRecebidos(usuarioId)
+
+    fun listarEventos(documentoId: Long) = eventoDao.listarDoDocumento(documentoId)
 
     // Cria o documento como rascunho; signatarios é um mapa de id do usuário para o papel dele
     suspend fun salvarRascunho(
@@ -48,33 +54,54 @@ class DocumentoRepository(
                 )
             )
         }
+
+        eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.CRIADO, descricao = "Documento criado"))
         return Result.success(documentoId)
     }
 
     // Regras do PDF checadas antes do envio
-    suspend fun enviar(documentoId: Long): Result<Unit> {
+    suspend fun enviar(documentoId: Long, mensagemConvite: String = ""): Result<Unit> {
+        val documento = documentoDao.buscarPorId(documentoId)
+            ?: return Result.failure(Exception("Documento não encontrado"))
+
+        // Se já foi enviado, não envia de novo: evita duplicar as solicitações numa nova tentativa
+        if (documento.status != StatusDocumento.RASCUNHO) return Result.success(Unit)
+
         val signatarios = documentoSignatarioDao.listarDoDocumento(documentoId)
-        if (signatarios.isEmpty())
-            return Result.failure(Exception("Adicione pelo menos um signatário"))
+        if (signatarios.isEmpty()) return Result.failure(Exception("Adicione pelo menos um signatário"))
 
         val campos = campoAssinaturaDao.listarDoDocumento(documentoId)
         val semCampo = signatarios.filter { s -> campos.none { it.documentoSignatarioId == s.id } }
-        if (semCampo.isNotEmpty())
-            return Result.failure(Exception("Todo signatário precisa de pelo menos um campo"))
+        if (semCampo.isNotEmpty()) return Result.failure(Exception("Todo signatário precisa de pelo menos um campo"))
 
         val foraDaPagina = campos.any { it.x < 0f || it.y < 0f || it.x + it.largura > 1f || it.y + it.altura > 1f }
-        if (foraDaPagina)
-            return Result.failure(Exception("Há campos fora dos limites da página"))
+        if (foraDaPagina) return Result.failure(Exception("Há campos fora dos limites da página"))
 
-        documentoDao.atualizarStatus(documentoId, StatusDocumento.ENVIADO)
+        // Salva a mensagem do convite junto com a mudança de status
+        documentoDao.atualizar(
+            documento.copy(status = StatusDocumento.ENVIADO, mensagemConvite = mensagemConvite.trim())
+        )
+        eventoDao.inserir(
+            Evento(
+                documentoId = documentoId,
+                tipo = TipoEvento.ENVIADO,
+                descricao = "Enviado para ${signatarios.size} signatário(s)"
+            )
+        )
         return Result.success(Unit)
     }
 
     // Só vira CONCLUIDO quando ninguém mais está pendente
     suspend fun registrarAssinatura(documentoId: Long, documentoSignatarioId: Long) {
         documentoSignatarioDao.marcarAssinado(documentoSignatarioId)
+        eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.ASSINADO, descricao = "Assinatura registrada"))
+
         val pendentes = documentoSignatarioDao.contarPendentes(documentoId)
-        val novoStatus = if (pendentes == 0) StatusDocumento.CONCLUIDO else StatusDocumento.PARCIAL
-        documentoDao.atualizarStatus(documentoId, novoStatus)
+        if (pendentes == 0) {
+            documentoDao.atualizarStatus(documentoId, StatusDocumento.CONCLUIDO)
+            eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.CONCLUIDO, descricao = "Todos assinaram"))
+        } else {
+            documentoDao.atualizarStatus(documentoId, StatusDocumento.PARCIAL)
+        }
     }
 }
