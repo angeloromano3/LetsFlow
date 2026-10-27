@@ -1,0 +1,28 @@
+package br.com.fiap.letsflow.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Update
+import br.com.fiap.letsflow.data.local.entity.CampoAssinatura
+
+@Dao
+interface CampoAssinaturaDao {
+
+    @Insert
+    suspend fun inserir(campo: CampoAssinatura): Long
+
+    @Update
+    suspend fun atualizar(campo: CampoAssinatura)
+
+    @Delete
+    suspend fun remover(campo: CampoAssinatura)
+
+    @Query("SELECT * FROM campos_assinatura WHERE documentoId = :documentoId ORDER BY pagina")
+    suspend fun listarDoDocumento(documentoId: Long): List<CampoAssinatura>
+
+    // Só os campos de um signatário: é o que ele vê na hora de assinar
+    @Query("SELECT * FROM campos_assinatura WHERE documentoSignatarioId = :vinculoId ORDER BY pagina")
+    suspend fun listarDoSignatario(vinculoId: Long): List<CampoAssinatura>
+}
