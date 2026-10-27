@@ -23,6 +23,6 @@ interface CampoAssinaturaDao {
     suspend fun listarDoDocumento(documentoId: Long): List<CampoAssinatura>
 
     // Só os campos de um signatário: é o que ele vê na hora de assinar
-    @Query("SELECT * FROM campos_assinatura WHERE documentoSignatarioId = :vinculoId ORDER BY pagina")
-    suspend fun listarDoSignatario(vinculoId: Long): List<CampoAssinatura>
+    @Query("SELECT * FROM campos_assinatura WHERE documentoSignatarioId = :documentoSignatarioId ORDER BY pagina")
+    suspend fun listarDoSignatario(documentoSignatarioId: Long): List<CampoAssinatura>
 }
