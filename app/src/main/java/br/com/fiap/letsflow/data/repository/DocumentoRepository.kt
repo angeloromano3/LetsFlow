@@ -4,6 +4,7 @@ import br.com.fiap.letsflow.data.local.dao.CampoAssinaturaDao
 import br.com.fiap.letsflow.data.local.dao.DocumentoDao
 import br.com.fiap.letsflow.data.local.dao.DocumentoSignatarioDao
 import br.com.fiap.letsflow.data.local.dao.EventoDao
+import br.com.fiap.letsflow.data.local.entity.CampoAssinatura
 import br.com.fiap.letsflow.data.local.entity.Documento
 import br.com.fiap.letsflow.data.local.entity.DocumentoSignatario
 import br.com.fiap.letsflow.data.local.entity.Evento
@@ -23,6 +24,10 @@ class DocumentoRepository(
     fun listarRecebidos(usuarioId: Long) = documentoDao.listarRecebidos(usuarioId)
 
     fun listarEventos(documentoId: Long) = eventoDao.listarDoDocumento(documentoId)
+
+    suspend fun buscarPorId(documentoId: Long) = documentoDao.buscarPorId(documentoId)
+
+    suspend fun listarSignatarios(documentoId: Long) = documentoSignatarioDao.listarComNome(documentoId)
 
     // Cria o documento como rascunho; signatarios é um mapa de id do usuário para o papel dele
     suspend fun salvarRascunho(
@@ -59,6 +64,23 @@ class DocumentoRepository(
         return Result.success(documentoId)
     }
 
+    // ---------- Campos de assinatura ----------
+
+    suspend fun listarCampos(documentoId: Long) = campoAssinaturaDao.listarDoDocumento(documentoId)
+
+    // Salva na hora e devolve o campo já com o id gerado pelo Room
+    suspend fun adicionarCampo(campo: CampoAssinatura): CampoAssinatura {
+        val id = campoAssinaturaDao.inserir(campo)
+        return campo.copy(id = id)
+    }
+
+    suspend fun removerCampo(campo: CampoAssinatura) = campoAssinaturaDao.remover(campo)
+
+    // Grava as posições finais depois que o Admin terminou de mover e redimensionar
+    suspend fun salvarPosicoes(campos: List<CampoAssinatura>) = campoAssinaturaDao.atualizarTodos(campos)
+
+    // ---------- Envio e assinatura ----------
+
     // Regras do PDF checadas antes do envio
     suspend fun enviar(documentoId: Long, mensagemConvite: String = ""): Result<Unit> {
         val documento = documentoDao.buscarPorId(documentoId)
@@ -74,7 +96,7 @@ class DocumentoRepository(
         val semCampo = signatarios.filter { s -> campos.none { it.documentoSignatarioId == s.id } }
         if (semCampo.isNotEmpty()) return Result.failure(Exception("Todo signatário precisa de pelo menos um campo"))
 
-        val foraDaPagina = campos.any { it.x < 0f || it.y < 0f || it.x + it.largura > 1f || it.y + it.altura > 1f }
+        val foraDaPagina = campos.any { it.posicaoX < 0f || it.posicaoY < 0f || it.posicaoX + it.largura > 1f || it.posicaoY + it.altura > 1f }
         if (foraDaPagina) return Result.failure(Exception("Há campos fora dos limites da página"))
 
         // Salva a mensagem do convite junto com a mudança de status

@@ -26,12 +26,18 @@ import androidx.room.PrimaryKey
 data class CampoAssinatura(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val documentoId: Long,
-    val documentoSignatarioId: Long,  // Regra de negócio: todo campo pertence a um signatário
+    val documentoSignatarioId: Long,  // Todo campo pertence a um signatário
     val pagina: Int,
-    // Posição e tamanho em proporção da página (de 0.0 a 1.0), não em pixels.
-    // Ex.: x = 0.5 é o meio da largura em qualquer tela. É o requisito técnico do Challenge.
-    val x: Float,
-    val y: Float,
-    val largura: Float,
-    val altura: Float
-)
+    // Posição e tamanho em proporção da página (0.0 a 1.0), não em pixels
+    val posicaoX: Float,
+    val posicaoY: Float,
+    val largura: Float = LARGURA_PADRAO,
+    val altura: Float = ALTURA_PADRAO,
+    val caminhoAssinatura: String? = null  // Imagem da assinatura salva no celular; nulo enquanto não assinou
+) {
+    companion object {
+        // Tamanho de um campo recém-criado: 30% da largura e 8% da altura da página
+        const val LARGURA_PADRAO = 0.30f
+        const val ALTURA_PADRAO = 0.08f
+    }
+}
