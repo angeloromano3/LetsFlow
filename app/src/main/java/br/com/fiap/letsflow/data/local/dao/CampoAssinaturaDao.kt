@@ -16,6 +16,10 @@ interface CampoAssinaturaDao {
     @Update
     suspend fun atualizar(campo: CampoAssinatura)
 
+    // Salva as posições finais de todos os campos de uma vez, no botão Continuar
+    @Update
+    suspend fun atualizarTodos(campos: List<CampoAssinatura>)
+
     @Delete
     suspend fun remover(campo: CampoAssinatura)
 
