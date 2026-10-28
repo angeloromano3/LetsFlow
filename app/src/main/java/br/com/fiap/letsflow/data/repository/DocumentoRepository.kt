@@ -46,7 +46,6 @@ class DocumentoRepository(
                 status = StatusDocumento.RASCUNHO
             )
         )
-
         signatarios.forEach { (usuarioId, papel) ->
             documentoSignatarioDao.inserir(
                 DocumentoSignatario(
@@ -56,9 +55,44 @@ class DocumentoRepository(
                 )
             )
         }
-
         eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.CRIADO, descricao = "Documento criado"))
         return Result.success(documentoId)
+    }
+
+    // ---------- Edição de signatários (só em rascunho) ----------
+
+    // Usuários que ainda podem entrar no documento
+    suspend fun listarDisponiveis(documentoId: Long) = documentoSignatarioDao.listarDisponiveis(documentoId)
+
+    // Adiciona um signatário com o papel escolhido
+    suspend fun adicionarSignatario(documentoId: Long, usuarioId: Long, papel: Papel): Result<Unit> {
+        val documento = documentoDao.buscarPorId(documentoId)
+            ?: return Result.failure(Exception("Documento não encontrado"))
+        // Depois de enviado, o documento fica preservado
+        if (documento.status != StatusDocumento.RASCUNHO)
+            return Result.failure(Exception("Documento já enviado não pode ser alterado"))
+        documentoSignatarioDao.inserir(
+            DocumentoSignatario(documentoId = documentoId, usuarioId = usuarioId, papel = papel)
+        )
+        return Result.success(Unit)
+    }
+
+    // Remove o signatário e todos os campos dele
+    suspend fun removerSignatario(documentoId: Long, documentoSignatarioId: Long): Result<Unit> {
+        val documento = documentoDao.buscarPorId(documentoId)
+            ?: return Result.failure(Exception("Documento não encontrado"))
+        if (documento.status != StatusDocumento.RASCUNHO)
+            return Result.failure(Exception("Documento já enviado não pode ser alterado"))
+        val vinculos = documentoSignatarioDao.listarDoDocumento(documentoId)
+        // Regra do Challenge: o documento sempre precisa de pelo menos um signatário
+        if (vinculos.size <= 1)
+            return Result.failure(Exception("Adicione outro signatário antes de remover o último"))
+        val vinculo = vinculos.find { it.id == documentoSignatarioId }
+            ?: return Result.failure(Exception("Signatário não encontrado"))
+        // Apaga os campos primeiro pra não sobrar campo sem dono
+        campoAssinaturaDao.listarDoSignatario(vinculo.id).forEach { campoAssinaturaDao.remover(it) }
+        documentoSignatarioDao.remover(vinculo)
+        return Result.success(Unit)
     }
 
     // ---------- Campos de assinatura ----------
@@ -79,7 +113,6 @@ class DocumentoRepository(
     suspend fun enviar(documentoId: Long, mensagemConvite: String = ""): Result<Unit> {
         val documento = documentoDao.buscarPorId(documentoId)
             ?: return Result.failure(Exception("Documento não encontrado"))
-
         if (documento.status != StatusDocumento.RASCUNHO) return Result.success(Unit)
 
         val signatarios = documentoSignatarioDao.listarDoDocumento(documentoId)
@@ -90,8 +123,7 @@ class DocumentoRepository(
         if (semCampo.isNotEmpty()) return Result.failure(Exception("Todo signatário precisa de pelo menos um campo"))
 
         val foraDaPagina = campos.any {
-            it.posicaoX < 0f || it.posicaoY < 0f ||
-                    it.posicaoX + it.largura > 1f || it.posicaoY + it.altura > 1f
+            it.posicaoX < 0f || it.posicaoY < 0f || it.posicaoX + it.largura > 1f || it.posicaoY + it.altura > 1f
         }
         if (foraDaPagina) return Result.failure(Exception("Há campos fora dos limites da página"))
 
@@ -135,15 +167,12 @@ class DocumentoRepository(
     suspend fun assinar(documentoId: Long, usuarioId: Long, caminhoAssinatura: String): Result<Unit> {
         val documento = documentoDao.buscarPorId(documentoId)
             ?: return Result.failure(Exception("Documento não encontrado"))
-
         // Rascunho ainda não foi enviado; concluído não aceita mais assinatura
         if (documento.status != StatusDocumento.ENVIADO && documento.status != StatusDocumento.PARCIAL) {
             return Result.failure(Exception("Documento não está disponível para assinatura"))
         }
-
         val vinculo = documentoSignatarioDao.buscarDoUsuario(documentoId, usuarioId)
             ?: return Result.failure(Exception("Você não é signatário deste documento"))
-
         // Impede assinar duas vezes
         if (vinculo.assinado) return Result.failure(Exception("Você já assinou este documento"))
 
