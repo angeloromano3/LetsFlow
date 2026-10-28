@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.fiap.letsflow.data.local.AppDatabase
 import br.com.fiap.letsflow.data.local.entity.CampoAssinatura
+import br.com.fiap.letsflow.data.local.entity.StatusDocumento
 import br.com.fiap.letsflow.data.local.storage.ArquivoAssinatura
 import br.com.fiap.letsflow.data.local.storage.RenderizadorPdf
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
@@ -73,6 +74,8 @@ fun AssinaturaScreen(
     var previa by remember { mutableStateOf<List<List<Offset>>?>(null) }
     // Evita apertar Confirmar duas vezes enquanto salva
     var salvando by remember { mutableStateOf(false) }
+    // Fica true quando esta assinatura foi a última e o PDF final foi gerado
+    var pdfFinalGerado by remember { mutableStateOf(false) }
 
     LaunchedEffect(documentoId, usuarioId) {
         val documento = repository.buscarPorId(documentoId)
@@ -112,6 +115,8 @@ fun AssinaturaScreen(
         Text(titulo, Modifier.padding(8.dp), style = MaterialTheme.typography.titleLarge)
         Text(
             when {
+                // Mensagem quando esta foi a última assinatura
+                pdfFinalGerado -> "Todos assinaram. O documento final foi gerado."
                 jaAssinou -> "Você já assinou este documento."
                 // Texto da etapa de prévia
                 previa != null -> "Confira sua assinatura nos campos antes de confirmar."
@@ -176,6 +181,12 @@ fun AssinaturaScreen(
                                     previa = null
                                     campos.clear()
                                     campos.addAll(repository.listarCamposDoSignatario(id))
+                                    // Se foi a última assinatura, gera o PDF final com todas as assinaturas
+                                    if (repository.buscarPorId(documentoId)?.status == StatusDocumento.CONCLUIDO) {
+                                        repository.gerarPdfFinal(documentoId, context.filesDir)
+                                            .onSuccess { pdfFinalGerado = true }
+                                            .onFailure { erro = "Erro ao gerar o PDF final: ${it.message}" }
+                                    }
                                 }
                                 .onFailure { erro = it.message }
                             salvando = false
@@ -183,7 +194,7 @@ fun AssinaturaScreen(
                     },
                     enabled = !salvando,
                     modifier = Modifier.weight(1f)
-                ) { Text("Confirmar assinatura") }
+                ) { Text(if (salvando) "Salvando..." else "Confirmar assinatura") } // Mostra que está processando
             }
 
             else -> Button(
