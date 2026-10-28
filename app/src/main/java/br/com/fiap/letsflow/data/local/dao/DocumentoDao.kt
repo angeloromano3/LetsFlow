@@ -35,4 +35,8 @@ interface DocumentoDao {
 
     @Query("UPDATE documentos SET status = :status WHERE id = :id")
     suspend fun atualizarStatus(id: Long, status: StatusDocumento)
+
+    // Grava onde ficou o PDF final assinado
+    @Query("UPDATE documentos SET caminhoPdfFinal = :caminho WHERE id = :id")
+    suspend fun salvarPdfFinal(id: Long, caminho: String)
 }

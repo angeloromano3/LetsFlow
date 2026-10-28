@@ -11,6 +11,8 @@ import br.com.fiap.letsflow.data.local.entity.Evento
 import br.com.fiap.letsflow.data.local.entity.Papel
 import br.com.fiap.letsflow.data.local.entity.StatusDocumento
 import br.com.fiap.letsflow.data.local.entity.TipoEvento
+import br.com.fiap.letsflow.data.local.storage.GeradorPdfFinal
+import java.io.File
 
 class DocumentoRepository(
     private val documentoDao: DocumentoDao,
@@ -181,5 +183,20 @@ class DocumentoRepository(
         }
         registrarAssinatura(documentoId, vinculo.id)
         return Result.success(Unit)
+    }
+
+    // ---------- Documento final ----------
+
+    // Gera o PDF assinado num arquivo novo; o original enviado fica intacto
+    suspend fun gerarPdfFinal(documentoId: Long, pasta: File): Result<String> {
+        val documento = documentoDao.buscarPorId(documentoId)
+            ?: return Result.failure(Exception("Documento não encontrado"))
+        // Só existe documento final quando todos assinaram
+        if (documento.status != StatusDocumento.CONCLUIDO)
+            return Result.failure(Exception("O PDF final só é gerado quando todos assinarem"))
+        val campos = campoAssinaturaDao.listarDoDocumento(documentoId)
+        val destino = File(File(pasta, "pdfs_finais"), "documento_${documentoId}_assinado.pdf")
+        return runCatching { GeradorPdfFinal.gerar(documento.caminhoPdf, campos, destino) }
+            .onSuccess { documentoDao.salvarPdfFinal(documentoId, it) }
     }
 }

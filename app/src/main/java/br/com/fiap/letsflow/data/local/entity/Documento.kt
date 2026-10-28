@@ -19,10 +19,11 @@ enum class StatusDocumento { RASCUNHO, ENVIADO, PARCIAL, CONCLUIDO }
 data class Documento(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val titulo: String,
-    val caminhoPdf: String,        // O PDF fica salvo no celular; aqui guardamos só o caminho
-    val adminId: Long,             // Quem criou: garante que um Admin não veja documentos de outro
+    val caminhoPdf: String,          // O PDF fica salvo no celular; aqui guardamos só o caminho
+    val adminId: Long,               // Quem criou: garante que um Admin não veja documentos de outro
     val status: StatusDocumento = StatusDocumento.RASCUNHO,
     val mensagemConvite: String = "",
-    val versao: Int = 1,           // Regra de negócio: alterar um documento enviado gera nova versão
-    val dataCriacao: Long = System.currentTimeMillis()  // Datas em milissegundos, assim o Room salva sem conversor
+    val versao: Int = 1,             // Regra de negócio: alterar um documento enviado gera nova versão
+    val dataCriacao: Long = System.currentTimeMillis(), // Datas em milissegundos, assim o Room salva sem conversor
+    val caminhoPdfFinal: String? = null // PDF com as assinaturas; fica nulo até todos assinarem
 )
