@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
 import br.com.fiap.letsflow.data.local.entity.DocumentoSignatario
+import br.com.fiap.letsflow.data.local.entity.Usuario
 import br.com.fiap.letsflow.data.local.model.SignatarioDoDocumento
 
 @Dao
@@ -20,8 +21,11 @@ interface DocumentoSignatarioDao {
     suspend fun listarDoDocumento(documentoId: Long): List<DocumentoSignatario>
 
     @Query("""
-        SELECT ds.id AS documentoSignatarioId, u.nomeCompleto AS nome,
-               ds.papel AS papel, ds.assinado AS assinado, ds.dataAssinatura AS dataAssinatura
+        SELECT ds.id AS documentoSignatarioId,
+               u.nomeCompleto AS nome,
+               ds.papel AS papel,
+               ds.assinado AS assinado,
+               ds.dataAssinatura AS dataAssinatura
         FROM documento_signatarios ds
         INNER JOIN usuarios u ON u.id = ds.usuarioId
         WHERE ds.documentoId = :documentoId
@@ -38,4 +42,13 @@ interface DocumentoSignatarioDao {
 
     @Query("SELECT COUNT(*) FROM documento_signatarios WHERE documentoId = :documentoId AND assinado = 0")
     suspend fun contarPendentes(documentoId: Long): Int
+
+    // Signatários cadastrados que ainda não estão neste documento (pra janela de adicionar)
+    @Query("""
+        SELECT * FROM usuarios
+        WHERE perfil = 'SIGNATARIO'
+          AND id NOT IN (SELECT usuarioId FROM documento_signatarios WHERE documentoId = :documentoId)
+        ORDER BY nomeCompleto
+    """)
+    suspend fun listarDisponiveis(documentoId: Long): List<Usuario>
 }

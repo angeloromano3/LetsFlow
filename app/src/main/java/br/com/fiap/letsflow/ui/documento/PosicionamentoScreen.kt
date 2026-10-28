@@ -13,9 +13,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
@@ -32,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.fiap.letsflow.data.local.AppDatabase
 import br.com.fiap.letsflow.data.local.entity.CampoAssinatura
+import br.com.fiap.letsflow.data.local.entity.Papel
+import br.com.fiap.letsflow.data.local.entity.Usuario
 import br.com.fiap.letsflow.data.local.model.SignatarioDoDocumento
 import br.com.fiap.letsflow.data.local.storage.RenderizadorPdf
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
@@ -40,11 +47,17 @@ import kotlin.math.roundToInt
 
 // Cores fixas por posição do signatário na lista (substitui as cores dos testSigners)
 private val coresSignatarios = listOf(
-    Color(0xFF1E88E5), Color(0xFFE53935), Color(0xFF43A047),
-    Color(0xFFFB8C00), Color(0xFF8E24AA)
+    Color(0xFF1E88E5), Color(0xFFE53935), Color(0xFF43A047), Color(0xFFFB8C00), Color(0xFF8E24AA)
 )
 
 private fun corDoIndice(indice: Int) = coresSignatarios[indice % coresSignatarios.size]
+
+// Nome do papel pra mostrar na tela
+private fun Papel.rotulo() = when (this) {
+    Papel.CONTRATANTE -> "Contratante"
+    Papel.CONTRATADO -> "Contratado"
+    Papel.TESTEMUNHA -> "Testemunha"
+}
 
 @Composable
 fun PosicionamentoScreen(
@@ -70,6 +83,20 @@ fun PosicionamentoScreen(
     val campos = remember { mutableStateListOf<CampoAssinatura>() }
     var selecionado by remember { mutableStateOf<SignatarioDoDocumento?>(null) }
     var erro by remember { mutableStateOf<String?>(null) }
+    // Usuários que ainda podem ser adicionados ao documento
+    val disponiveis = remember { mutableStateListOf<Usuario>() }
+    // Controla a janela de edição de signatários
+    var mostrarSignatarios by remember { mutableStateOf(false) }
+
+    // Recarrega do banco a lista de signatários e a de disponíveis, mantendo a seleção se ainda existir
+    suspend fun recarregarSignatarios() {
+        signatarios.clear()
+        signatarios.addAll(repository.listarSignatarios(documentoId))
+        disponiveis.clear()
+        disponiveis.addAll(repository.listarDisponiveis(documentoId))
+        selecionado = signatarios.find { it.documentoSignatarioId == selecionado?.documentoSignatarioId }
+            ?: signatarios.firstOrNull()
+    }
 
     // Carrega documento, signatários e campos já salvos do banco
     LaunchedEffect(documentoId) {
@@ -79,9 +106,8 @@ fun PosicionamentoScreen(
             return@LaunchedEffect
         }
         renderizador = RenderizadorPdf(documento.caminhoPdf)
-        signatarios.addAll(repository.listarSignatarios(documentoId))
+        recarregarSignatarios() // Agora também carrega os disponíveis
         campos.addAll(repository.listarCampos(documentoId))
-        selecionado = signatarios.firstOrNull()
     }
 
     // Fecha o PdfRenderer quando sai da tela
@@ -90,12 +116,49 @@ fun PosicionamentoScreen(
         onDispose { atual?.close() }
     }
 
+    // Janela de adicionar e remover signatários
+    if (mostrarSignatarios) {
+        SignatariosDialog(
+            signatarios = signatarios,
+            disponiveis = disponiveis,
+            onRemover = { signatario ->
+                scope.launch {
+                    repository.removerSignatario(documentoId, signatario.documentoSignatarioId)
+                        .onSuccess {
+                            // Tira da tela só os campos dele; os outros mantêm as posições ainda não salvas
+                            campos.removeAll { it.documentoSignatarioId == signatario.documentoSignatarioId }
+                            recarregarSignatarios()
+                            erro = null
+                        }
+                        .onFailure { erro = it.message }
+                }
+            },
+            onAdicionar = { usuario, papel ->
+                scope.launch {
+                    repository.adicionarSignatario(documentoId, usuario.id, papel)
+                        .onSuccess {
+                            recarregarSignatarios()
+                            erro = null
+                        }
+                        .onFailure { erro = it.message }
+                }
+            },
+            onFechar = { mostrarSignatarios = false }
+        )
+    }
+
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         Text(
             "Toque na página para criar um campo. Segure para apagar.",
             Modifier.padding(8.dp),
             style = MaterialTheme.typography.bodyMedium
         )
+
+        // Abre a janela de edição, mostrando quantos signatários há
+        OutlinedButton(
+            onClick = { mostrarSignatarios = true },
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) { Text("Signatários (${signatarios.size})") }
 
         // Seletor de quem vai assinar os próximos campos, agora com os signatários reais
         Row(
@@ -161,10 +224,62 @@ fun PosicionamentoScreen(
                 }
             },
             modifier = Modifier.fillMaxWidth().padding(8.dp)
-        ) {
-            Text("Continuar")
-        }
+        ) { Text("Continuar") }
     }
+}
+
+// Janela com os signatários atuais (remover) e os disponíveis (adicionar com papel)
+@Composable
+private fun SignatariosDialog(
+    signatarios: List<SignatarioDoDocumento>,
+    disponiveis: List<Usuario>,
+    onRemover: (SignatarioDoDocumento) -> Unit,
+    onAdicionar: (Usuario, Papel) -> Unit,
+    onFechar: () -> Unit
+) {
+    // Papel que será usado no próximo "Adicionar"
+    var papel by remember { mutableStateOf(Papel.CONTRATANTE) }
+
+    AlertDialog(
+        onDismissRequest = onFechar,
+        confirmButton = { TextButton(onClick = onFechar) { Text("Fechar") } },
+        title = { Text("Signatários") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("No documento", style = MaterialTheme.typography.titleSmall)
+                signatarios.forEach { s ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${s.nome} (${s.papel.rotulo()})", Modifier.weight(1f))
+                        TextButton(onClick = { onRemover(s) }) { Text("Remover") }
+                    }
+                }
+
+                // Só mostra a parte de adicionar se ainda houver alguém disponível
+                if (disponiveis.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Adicionar como", style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Papel.entries.forEach { p ->
+                            FilterChip(
+                                selected = papel == p,
+                                onClick = { papel = p },
+                                label = { Text(p.rotulo()) }
+                            )
+                        }
+                    }
+                    disponiveis.forEach { u ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(u.nomeCompleto, Modifier.weight(1f))
+                            TextButton(onClick = { onAdicionar(u, papel) }) { Text("Adicionar") }
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -218,9 +333,7 @@ private fun PaginaItem(
 
         campos.filter { it.pagina == indice }.forEach { campo ->
             key(campo.id) {
-                val posicao = signatarios.indexOfFirst {
-                    it.documentoSignatarioId == campo.documentoSignatarioId
-                }
+                val posicao = signatarios.indexOfFirst { it.documentoSignatarioId == campo.documentoSignatarioId }
                 CampoBox(
                     campo = campo,
                     nome = signatarios.getOrNull(posicao)?.nome ?: "",
@@ -295,7 +408,6 @@ private fun CampoBox(
             }
     ) {
         Text(nome, Modifier.align(Alignment.Center), color = cor, fontSize = 10.sp)
-
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
