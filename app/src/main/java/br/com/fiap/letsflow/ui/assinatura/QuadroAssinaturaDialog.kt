@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -37,8 +38,8 @@ fun QuadroAssinaturaDialog(
             Canvas(
                 Modifier
                     .fillMaxWidth()
-                    // Proporção fixa 3:1, igual à imagem salva pelo ArquivoAssinatura
                     .aspectRatio(3f)
+                    .clipToBounds() // Corta o desenho na borda do quadro: o traço não vaza pra fora
                     .border(1.dp, Color.Gray)
                     .pointerInput(Unit) {
                         detectDragGestures(
@@ -71,7 +72,11 @@ fun QuadroAssinaturaDialog(
     }
 }
 
-private fun Offset.normalizar(size: IntSize) = Offset(x / size.width, y / size.height)
+// Prende o ponto entre 0 e 1: se o dedo sair do quadro, o traço fica colado na borda
+private fun Offset.normalizar(size: IntSize) = Offset(
+    (x / size.width).coerceIn(0f, 1f),
+    (y / size.height).coerceIn(0f, 1f)
+)
 
 private fun DrawScope.desenharTraco(pontos: List<Offset>) {
     if (pontos.size < 2) return

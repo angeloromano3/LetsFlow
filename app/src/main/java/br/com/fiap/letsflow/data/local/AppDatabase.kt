@@ -60,7 +60,8 @@ abstract class AppDatabase : RoomDatabase() {
                     """
                     INSERT INTO usuarios (nomeCompleto, email, telefone, senha, perfil) VALUES
                     ('Administrador', 'admin@letsflow.com', '11999990000', '123456', 'ADMIN'),
-                    ('Maria Souza', 'maria@letsflow.com', '11988887777', '123456', 'SIGNATARIO')
+                    ('Maria Souza', 'maria@letsflow.com', '11988887777', '123456', 'SIGNATARIO'),
+                    ('João Lima', 'joao@letsflow.com', '11977776666', '123456', 'SIGNATARIO') -- Segundo signatário, pra testar o status parcial
                     """.trimIndent()
                 )
             }

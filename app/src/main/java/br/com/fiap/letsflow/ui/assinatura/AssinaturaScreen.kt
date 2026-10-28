@@ -2,6 +2,7 @@ package br.com.fiap.letsflow.ui.assinatura
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,12 +10,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +39,7 @@ import br.com.fiap.letsflow.data.repository.DocumentoRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val corCampo = Color(0xFF1E88E5)
@@ -38,8 +47,8 @@ private val corCampo = Color(0xFF1E88E5)
 @Composable
 fun AssinaturaScreen(
     documentoId: Long,
-    usuarioId: Long,          // Signatário logado
-    onConcluido: () -> Unit   // Volta pra lista de documentos
+    usuarioId: Long,
+    onConcluido: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -60,15 +69,17 @@ fun AssinaturaScreen(
     var mostrarQuadro by remember { mutableStateOf(false) }
     var erro by remember { mutableStateOf<String?>(null) }
     val campos = remember { mutableStateListOf<CampoAssinatura>() }
+    // Assinatura desenhada mas ainda não confirmada; null quando não há prévia
+    var previa by remember { mutableStateOf<List<List<Offset>>?>(null) }
+    // Evita apertar Confirmar duas vezes enquanto salva
+    var salvando by remember { mutableStateOf(false) }
 
-    // Carrega o documento e só os campos do signatário logado
     LaunchedEffect(documentoId, usuarioId) {
         val documento = repository.buscarPorId(documentoId)
         if (documento == null) {
             erro = "Documento não encontrado"
             return@LaunchedEffect
         }
-        // Garante que um usuário não abre documento de outro
         val vinculo = repository.buscarVinculo(documentoId, usuarioId)
         if (vinculo == null) {
             erro = "Você não é signatário deste documento"
@@ -91,21 +102,8 @@ fun AssinaturaScreen(
             onCancelar = { mostrarQuadro = false },
             onConfirmar = { tracos ->
                 mostrarQuadro = false
-                scope.launch {
-                    val id = documentoSignatarioId ?: return@launch
-                    // Gravar arquivo é trabalho pesado: vai pra uma thread de fundo
-                    val caminho = withContext(Dispatchers.IO) {
-                        ArquivoAssinatura.salvar(context, tracos, "doc_${documentoId}_sig_${id}.png")
-                    }
-                    repository.assinar(documentoId, usuarioId, caminho)
-                        .onSuccess {
-                            jaAssinou = true
-                            // Recarrega os campos, agora com a imagem da assinatura
-                            campos.clear()
-                            campos.addAll(repository.listarCamposDoSignatario(id))
-                        }
-                        .onFailure { erro = it.message }
-                }
+                // Não salva ainda: só mostra a prévia nos campos
+                previa = tracos
             }
         )
     }
@@ -113,7 +111,12 @@ fun AssinaturaScreen(
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         Text(titulo, Modifier.padding(8.dp), style = MaterialTheme.typography.titleLarge)
         Text(
-            if (jaAssinou) "Você já assinou este documento." else "Confira o documento e toque em Assinar.",
+            when {
+                jaAssinou -> "Você já assinou este documento."
+                // Texto da etapa de prévia
+                previa != null -> "Confira sua assinatura nos campos antes de confirmar."
+                else -> "Confira o documento e toque em Assinar."
+            },
             Modifier.padding(horizontal = 8.dp),
             style = MaterialTheme.typography.bodyMedium
         )
@@ -128,28 +131,75 @@ fun AssinaturaScreen(
                 contentPadding = PaddingValues(8.dp)
             ) {
                 items(atual.totalPaginas) { indice ->
-                    PaginaAssinatura(atual, indice, campos.filter { it.pagina == indice })
+                    // Passa a prévia pra página desenhar nos campos
+                    PaginaAssinatura(atual, indice, campos.filter { it.pagina == indice }, previa)
                 }
             }
         } else {
             Spacer(Modifier.weight(1f))
         }
 
-        Button(
-            onClick = { if (jaAssinou) onConcluido() else mostrarQuadro = true },
-            modifier = Modifier.fillMaxWidth().padding(8.dp)
-        ) {
-            Text(if (jaAssinou) "Voltar" else "Assinar")
+        val tracosPrevia = previa
+        when {
+            jaAssinou -> Button(
+                onClick = onConcluido,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            ) { Text("Voltar") }
+
+            // Etapa de prévia: refazer ou confirmar de vez
+            tracosPrevia != null -> Row(
+                Modifier.fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Descarta a prévia e abre o quadro de novo
+                OutlinedButton(
+                    onClick = {
+                        previa = null
+                        mostrarQuadro = true
+                    },
+                    enabled = !salvando,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Refazer") }
+
+                // Só aqui a assinatura vira PNG e é gravada no banco
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val id = documentoSignatarioId ?: return@launch
+                            salvando = true
+                            val caminho = withContext(Dispatchers.IO) {
+                                ArquivoAssinatura.salvar(context, tracosPrevia, "doc_${documentoId}_sig_${id}.png")
+                            }
+                            repository.assinar(documentoId, usuarioId, caminho)
+                                .onSuccess {
+                                    jaAssinou = true
+                                    previa = null
+                                    campos.clear()
+                                    campos.addAll(repository.listarCamposDoSignatario(id))
+                                }
+                                .onFailure { erro = it.message }
+                            salvando = false
+                        }
+                    },
+                    enabled = !salvando,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Confirmar assinatura") }
+            }
+
+            else -> Button(
+                onClick = { mostrarQuadro = true },
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            ) { Text("Assinar") }
         }
     }
 }
 
-// Página só para leitura: aqui não dá pra mover nem apagar campos
 @Composable
 private fun PaginaAssinatura(
     renderizador: RenderizadorPdf,
     indice: Int,
-    campos: List<CampoAssinatura>
+    campos: List<CampoAssinatura>,
+    previa: List<List<Offset>>? // Traços da prévia, se houver
 ) {
     val bitmap by produceState<Bitmap?>(null, renderizador, indice) {
         value = renderizador.renderizarPagina(indice)
@@ -170,16 +220,19 @@ private fun PaginaAssinatura(
     ) {
         Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
         if (tamanhoPagina != IntSize.Zero) {
-            campos.forEach { campo -> key(campo.id) { CampoParaAssinar(campo, tamanhoPagina) } }
+            campos.forEach { campo -> key(campo.id) { CampoParaAssinar(campo, tamanhoPagina, previa) } }
         }
     }
 }
 
 @Composable
-private fun CampoParaAssinar(campo: CampoAssinatura, tamanhoPagina: IntSize) {
+private fun CampoParaAssinar(
+    campo: CampoAssinatura,
+    tamanhoPagina: IntSize,
+    previa: List<List<Offset>>? // Traços da prévia, se houver
+) {
     val density = LocalDensity.current
     val caminho = campo.caminhoAssinatura
-    // Só lê o PNG do disco quando o caminho muda
     val imagem = remember(caminho) { caminho?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
 
     Box(
@@ -195,15 +248,40 @@ private fun CampoParaAssinar(campo: CampoAssinatura, tamanhoPagina: IntSize) {
                 with(density) { (campo.altura * tamanhoPagina.height).toDp() }
             )
             .then(
-                // Campo pendente fica destacado; campo assinado mostra só a assinatura
                 if (imagem == null) Modifier.background(corCampo.copy(alpha = 0.15f)).border(2.dp, corCampo)
                 else Modifier
             )
     ) {
-        if (imagem != null) {
-            Image(imagem, contentDescription = "Assinatura", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        } else {
-            Text("Assine aqui", Modifier.align(Alignment.Center), color = corCampo, fontSize = 10.sp)
+        when {
+            imagem != null -> Image(
+                imagem,
+                contentDescription = "Assinatura",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+            // Desenha a prévia direto no campo, sem salvar arquivo
+            previa != null -> Canvas(Modifier.fillMaxSize()) {
+                previa.forEach { desenharTracoPrevia(it) }
+            }
+            else -> Text("Assine aqui", Modifier.align(Alignment.Center), color = corCampo, fontSize = 10.sp)
         }
     }
+}
+
+// Desenha a prévia na proporção 3:1, centralizada no campo, igual ao PNG final com ContentScale.Fit
+private fun DrawScope.desenharTracoPrevia(pontos: List<Offset>) {
+    if (pontos.size < 2) return
+    val largura = min(size.width, size.height * 3f)
+    val altura = largura / 3f
+    val inicioX = (size.width - largura) / 2f
+    val inicioY = (size.height - altura) / 2f
+    val caminho = Path().apply {
+        moveTo(inicioX + pontos[0].x * largura, inicioY + pontos[0].y * altura)
+        pontos.drop(1).forEach { lineTo(inicioX + it.x * largura, inicioY + it.y * altura) }
+    }
+    drawPath(
+        caminho,
+        Color.Black,
+        style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
 }
