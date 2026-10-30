@@ -10,19 +10,17 @@ class UsuarioRepository(private val dao: UsuarioDao) {
     suspend fun login(email: String, senha: String): Usuario? =
         dao.login(email.trim().lowercase(), senha)
 
+    suspend fun buscarPorId(id: Long): Usuario? = dao.buscarPorId(id)
+
     fun listarSignatarios() = dao.listarPorPerfil(Perfil.SIGNATARIO)
 
     // Valida os dados obrigatórios antes de salvar
     suspend fun cadastrarSignatario(nome: String, email: String, telefone: String, senha: String): Result<Long> {
         val emailLimpo = email.trim().lowercase()
-        if (nome.isBlank())
-            return Result.failure(Exception("Informe o nome completo"))
-        if (!emailLimpo.contains("@"))
-            return Result.failure(Exception("E-mail inválido"))
-        if (senha.length < 6)
-            return Result.failure(Exception("A senha precisa ter pelo menos 6 caracteres"))
-        if (dao.buscarPorEmail(emailLimpo) != null)
-            return Result.failure(Exception("E-mail já cadastrado"))
+        if (nome.isBlank()) return Result.failure(Exception("Informe o nome completo"))
+        if (!emailLimpo.contains("@")) return Result.failure(Exception("E-mail inválido"))
+        if (senha.length < 6) return Result.failure(Exception("A senha precisa ter pelo menos 6 caracteres"))
+        if (dao.buscarPorEmail(emailLimpo) != null) return Result.failure(Exception("E-mail já cadastrado"))
 
         val id = dao.inserir(
             Usuario(

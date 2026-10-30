@@ -24,6 +24,10 @@ interface UsuarioDao {
     @Query("SELECT * FROM usuarios WHERE email = :email LIMIT 1")
     suspend fun buscarPorEmail(email: String): Usuario?
 
+    // Usado pra mostrar o nome de quem está logado
+    @Query("SELECT * FROM usuarios WHERE id = :id")
+    suspend fun buscarPorId(id: Long): Usuario?
+
     // Flow: a lista na tela atualiza sozinha quando alguém é cadastrado
     @Query("SELECT * FROM usuarios WHERE perfil = :perfil ORDER BY nomeCompleto")
     fun listarPorPerfil(perfil: Perfil): Flow<List<Usuario>>

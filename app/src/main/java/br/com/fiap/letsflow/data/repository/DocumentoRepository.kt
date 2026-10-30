@@ -57,14 +57,16 @@ class DocumentoRepository(
                 )
             )
         }
-        eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.CRIADO, descricao = "Documento criado"))
+        eventoDao.inserir(Evento(documentoId = documentoId,
+            tipo = TipoEvento.CRIADO, descricao = "Documento criado"))
         return Result.success(documentoId)
     }
 
     // ---------- Edição de signatários (só em rascunho) ----------
 
     // Usuários que ainda podem entrar no documento
-    suspend fun listarDisponiveis(documentoId: Long) = documentoSignatarioDao.listarDisponiveis(documentoId)
+    suspend fun listarDisponiveis(documentoId: Long) = documentoSignatarioDao
+        .listarDisponiveis(documentoId)
 
     // Adiciona um signatário com o papel escolhido
     suspend fun adicionarSignatario(documentoId: Long, usuarioId: Long, papel: Papel): Result<Unit> {
@@ -92,7 +94,8 @@ class DocumentoRepository(
         val vinculo = vinculos.find { it.id == documentoSignatarioId }
             ?: return Result.failure(Exception("Signatário não encontrado"))
         // Apaga os campos primeiro pra não sobrar campo sem dono
-        campoAssinaturaDao.listarDoSignatario(vinculo.id).forEach { campoAssinaturaDao.remover(it) }
+        campoAssinaturaDao.listarDoSignatario(vinculo.id).forEach {
+            campoAssinaturaDao.remover(it) }
         documentoSignatarioDao.remover(vinculo)
         return Result.success(Unit)
     }
@@ -144,12 +147,23 @@ class DocumentoRepository(
 
     suspend fun registrarAssinatura(documentoId: Long, documentoSignatarioId: Long) {
         documentoSignatarioDao.marcarAssinado(documentoSignatarioId)
-        eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.ASSINADO, descricao = "Assinatura registrada"))
+
+        // Grava quem assinou, pra o histórico mostrar o nome
+        val nome = documentoSignatarioDao.listarComNome(documentoId)
+            .find { it.documentoSignatarioId == documentoSignatarioId }?.nome
+        eventoDao.inserir(
+            Evento(
+                documentoId = documentoId,
+                tipo = TipoEvento.ASSINADO,
+                descricao = if (nome != null) "Assinado por $nome" else "Assinatura registrada"
+            )
+        )
 
         val pendentes = documentoSignatarioDao.contarPendentes(documentoId)
         if (pendentes == 0) {
             documentoDao.atualizarStatus(documentoId, StatusDocumento.CONCLUIDO)
-            eventoDao.inserir(Evento(documentoId = documentoId, tipo = TipoEvento.CONCLUIDO, descricao = "Todos assinaram"))
+            eventoDao.inserir(Evento(documentoId = documentoId,
+                tipo = TipoEvento.CONCLUIDO, descricao = "Todos assinaram"))
         } else {
             documentoDao.atualizarStatus(documentoId, StatusDocumento.PARCIAL)
         }
