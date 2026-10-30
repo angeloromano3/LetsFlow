@@ -30,42 +30,44 @@ import br.com.fiap.letsflow.data.local.AppDatabase
 import br.com.fiap.letsflow.data.local.entity.CampoAssinatura
 import br.com.fiap.letsflow.data.local.storage.RenderizadorPdf
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
-import br.com.fiap.letsflow.ui.theme.AzulLetsFlow
-import br.com.fiap.letsflow.ui.theme.BordaCartao
-import br.com.fiap.letsflow.ui.theme.FundoTela
-import br.com.fiap.letsflow.ui.theme.TextoPrincipal
-import br.com.fiap.letsflow.ui.theme.TextoSecundario
+import br.com.fiap.letsflow.ui.theme.LetsFlowTheme
 import kotlin.math.roundToInt
 
-// Documento em modo somente leitura: o signatário confere a assinatura sem poder alterar nada
+// Tela de leitura: mostra o documento com as assinaturas, sem permitir edição
 @Composable
 fun VisualizarDocumentoScreen(
-    documentoId: Long,
-    usuarioId: Long,
-    onVoltar: () -> Unit
+    documentoId: Long, usuarioId: Long, onVoltar: () -> Unit
 ) {
     val context = LocalContext.current
     val repository = remember {
         val db = AppDatabase.getInstance(context)
-        DocumentoRepository(db.documentoDao(), db.documentoSignatarioDao(), db.campoAssinaturaDao(), db.eventoDao())
+        DocumentoRepository(
+            db.documentoDao(),
+            db.documentoSignatarioDao(),
+            db.campoAssinaturaDao(),
+            db.eventoDao()
+        )
     }
+    val cores = LetsFlowTheme.cores // Usa paleta clara ou escura
+    val tipografia = MaterialTheme.typography // Estilos do Figma
 
+    // Estados da tela: quando um deles muda, a tela se redesenha sozinha
     var titulo by remember { mutableStateOf("") }
     var situacao by remember { mutableStateOf("") }
     var erro by remember { mutableStateOf<String?>(null) }
-    var renderizador by remember { mutableStateOf<RenderizadorPdf?>(null) }
-    // true quando mostramos o PDF final, que já traz todas as assinaturas desenhadas
+    var renderizador by remember { mutableStateOf<RenderizadorPdf?>(null) } // Transforma páginas do PDF em imagem
     var usandoPdfFinal by remember { mutableStateOf(false) }
-    val campos = remember { mutableStateListOf<CampoAssinatura>() }
+    val campos = remember { mutableStateListOf<CampoAssinatura>() } // Campos da pessoa logada
     var paginaAtual by remember { mutableIntStateOf(0) }
 
+    // Ao abrir a tela, carrega o documento e confere se a pessoa pode vê-lo
     LaunchedEffect(documentoId, usuarioId) {
         val documento = repository.buscarPorId(documentoId)
         if (documento == null) {
             erro = "Documento não encontrado"
             return@LaunchedEffect
         }
-        // Mesmo controle de acesso da assinatura: só quem é signatário abre
+        // Regra do Challenge: só quem é signatário acessa o documento
         val vinculo = repository.buscarVinculo(documentoId, usuarioId)
         if (vinculo == null) {
             erro = "Você não é signatário deste documento"
@@ -73,27 +75,32 @@ fun VisualizarDocumentoScreen(
         }
         titulo = documento.titulo
 
-        // Primeiro nome de quem ainda falta assinar (sem contar a própria pessoa)
+        // Primeiro nome de quem ainda falta assinar, pra montar a frase de situação
         val outrosPendentes = repository.listarSignatarios(documentoId)
             .filter { !it.assinado && it.documentoSignatarioId != vinculo.id }
             .map { it.nome.substringBefore(" ") }
         situacao = when {
             !vinculo.assinado -> "Você ainda não assinou este documento."
             outrosPendentes.size == 1 -> "Sua assinatura foi registrada. ${outrosPendentes[0]} ainda está pendente."
-            outrosPendentes.size > 1 ->
-                "Sua assinatura foi registrada. ${outrosPendentes.joinToString(" e ")} ainda estão pendentes."
+            outrosPendentes.size > 1 -> "Sua assinatura foi registrada. ${
+                outrosPendentes.joinToString(
+                    " e "
+                )
+            } ainda estão pendentes."
+
             else -> "Documento já assinado. Visualização sem edição."
         }
 
-        // Se todos assinaram, mostra o PDF final; senão, o original com as assinaturas desta pessoa por cima
+        // Concluído abre o PDF final; senão, abre o original e desenha as assinaturas por cima
         val pdfFinal = documento.caminhoPdfFinal
         usandoPdfFinal = pdfFinal != null
         renderizador = RenderizadorPdf(pdfFinal ?: documento.caminhoPdf)
         campos.addAll(repository.listarCamposDoSignatario(vinculo.id))
-        // Abre direto na página da primeira assinatura, como no protótipo
-        paginaAtual = campos.minOfOrNull { it.pagina } ?: 0
+        paginaAtual =
+            campos.minOfOrNull { it.pagina } ?: 0 // Começa na primeira página com assinatura
     }
 
+    // Fecha o PDF ao sair da tela, pra liberar memória
     val atual = renderizador
     DisposableEffect(atual) {
         onDispose { atual?.close() }
@@ -102,7 +109,7 @@ fun VisualizarDocumentoScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .background(FundoTela)
+            .background(cores.fundo)
             .safeDrawingPadding()
             .padding(horizontal = 24.dp, vertical = 16.dp)
     ) {
@@ -110,55 +117,72 @@ fun VisualizarDocumentoScreen(
             Text(
                 "←",
                 fontSize = 22.sp,
-                color = TextoPrincipal,
-                modifier = Modifier.clip(CircleShape).clickable(onClick = onVoltar).padding(8.dp)
+                color = cores.texto,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onVoltar)
+                    .padding(8.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text("Visualizar documento", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = TextoPrincipal)
+            Text("Visualizar documento", style = tipografia.headlineMedium, color = cores.texto)
         }
         Spacer(Modifier.height(8.dp))
-        Text(titulo, fontSize = 13.sp, color = TextoSecundario)
+        Text(titulo, style = tipografia.bodyMedium, color = cores.textoSecundario)
         Spacer(Modifier.height(16.dp))
-        Text("Modo somente leitura", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = AzulLetsFlow)
-        Text("Este documento não pode ser alterado nesta visualização.", fontSize = 12.sp, color = TextoSecundario)
+        Text("Modo somente leitura", style = tipografia.titleMedium, color = cores.acao)
+        Text(
+            "Este documento não pode ser alterado nesta visualização.",
+            style = tipografia.bodySmall,
+            color = cores.textoSecundario
+        )
         Spacer(Modifier.height(16.dp))
-        Text(situacao, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextoPrincipal)
+        Text(
+            situacao,
+            style = tipografia.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = cores.texto
+        )
         erro?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                it,
+                color = cores.erro,
+                style = tipografia.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
         Spacer(Modifier.height(16.dp))
 
+        // Página e navegação só aparecem depois que o PDF carregou
         if (atual != null) {
-            // Moldura cinza em volta da página; weight faz a página caber na altura que sobra
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .background(BordaCartao, RoundedCornerShape(12.dp))
+                    .background(
+                        cores.divisao,
+                        RoundedCornerShape(12.dp))
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 PaginaSomenteLeitura(
-                    renderizador = atual,
-                    indice = paginaAtual,
-                    // No PDF final as assinaturas já estão desenhadas na página
-                    campos = if (usandoPdfFinal) emptyList() else campos.filter { it.pagina == paginaAtual }
-                )
+                    renderizador = atual, indice = paginaAtual,
+                    // O PDF final já tem as assinaturas impressas, então não desenha de novo
+                    campos = if (usandoPdfFinal) emptyList() else campos.filter { it.pagina == paginaAtual })
             }
             Spacer(Modifier.height(12.dp))
 
-            // Navegação "‹ Página X de Y ›"
+            // Setas pra trocar de página
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { paginaAtual-- }, enabled = paginaAtual > 0) {
                     Text("‹", fontSize = 20.sp)
                 }
                 Text(
                     "Página ${paginaAtual + 1} de ${atual.totalPaginas}",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextoPrincipal
+                    style = tipografia.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                    color = cores.texto
                 )
-                TextButton(onClick = { paginaAtual++ }, enabled = paginaAtual < atual.totalPaginas - 1) {
+                TextButton(
+                    onClick = { paginaAtual++ }, enabled = paginaAtual < atual.totalPaginas - 1
+                ) {
                     Text("›", fontSize = 20.sp)
                 }
             }
@@ -166,30 +190,33 @@ fun VisualizarDocumentoScreen(
     }
 }
 
+// Desenha uma página do PDF com as assinaturas da pessoa por cima
 @Composable
 private fun PaginaSomenteLeitura(
-    renderizador: RenderizadorPdf,
-    indice: Int,
-    campos: List<CampoAssinatura>
+    renderizador: RenderizadorPdf, indice: Int, campos: List<CampoAssinatura>
 ) {
+    // Gera a imagem da página em segundo plano, sem travar a tela
     val bitmap by produceState<Bitmap?>(null, renderizador, indice) {
         value = renderizador.renderizarPagina(indice)
     }
     val bmp = bitmap
     if (bmp == null) {
-        Box(Modifier.aspectRatio(0.707f).background(Color.White))
+        Box(
+            Modifier
+                .aspectRatio(0.707f)
+                .background(Color.White)
+        ) // Página em branco enquanto carrega
         return
     }
 
+    // Tamanho real da página na tela, usado pra converter as posições relativas
     var tamanhoPagina by remember { mutableStateOf(IntSize.Zero) }
 
-    // Sem fillMaxWidth: o aspectRatio escolhe o maior tamanho que cabe na moldura
     Box(
         Modifier
             .aspectRatio(bmp.width / bmp.height.toFloat())
-            .background(Color.White)
-            .onSizeChanged { tamanhoPagina = it }
-    ) {
+            .background(Color.White) // Página sempre branca, como papel, mesmo no modo escuro
+            .onSizeChanged { tamanhoPagina = it }) {
         Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
         if (tamanhoPagina != IntSize.Zero) {
             campos.forEach { campo -> key(campo.id) { AssinaturaNoCampo(campo, tamanhoPagina) } }
@@ -197,7 +224,7 @@ private fun PaginaSomenteLeitura(
     }
 }
 
-// Só mostra a imagem da assinatura no lugar do campo, sem borda nem toque
+// Coloca a imagem da assinatura na posição e no tamanho do campo
 @Composable
 private fun AssinaturaNoCampo(campo: CampoAssinatura, tamanhoPagina: IntSize) {
     val caminho = campo.caminhoAssinatura ?: return
@@ -209,6 +236,7 @@ private fun AssinaturaNoCampo(campo: CampoAssinatura, tamanhoPagina: IntSize) {
         contentDescription = "Assinatura",
         contentScale = ContentScale.Fit,
         modifier = Modifier
+            // Posição relativa (0 a 1) vezes o tamanho da página = posição em pixels
             .offset {
                 IntOffset(
                     (campo.posicaoX * tamanhoPagina.width).roundToInt(),
@@ -217,7 +245,6 @@ private fun AssinaturaNoCampo(campo: CampoAssinatura, tamanhoPagina: IntSize) {
             }
             .size(
                 with(density) { (campo.largura * tamanhoPagina.width).toDp() },
-                with(density) { (campo.altura * tamanhoPagina.height).toDp() }
-            )
+                with(density) { (campo.altura * tamanhoPagina.height).toDp() })
     )
 }

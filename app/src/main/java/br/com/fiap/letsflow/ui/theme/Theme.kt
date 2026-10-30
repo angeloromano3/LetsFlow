@@ -1,58 +1,70 @@
 package br.com.fiap.letsflow.ui.theme
 
-import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+// Guarda a paleta atual pra qualquer tela ler
+private val LocalPaleta = staticCompositionLocalOf { PaletaClara }
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+// Atalho: LetsFlowTheme.cores.acao, LetsFlowTheme.cores.texto...
+object LetsFlowTheme {
+    val cores: PaletaLetsFlow
+        @Composable @ReadOnlyComposable
+        get() = LocalPaleta.current
+}
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
-)
+// Liga a paleta aos papéis do Material, pra botões, campos e diálogos padrão já saírem certos
+private fun esquemaMaterial(p: PaletaLetsFlow, escuro: Boolean): ColorScheme {
+    val base = if (escuro) darkColorScheme() else lightColorScheme()
+    return base.copy(
+        primary = p.acao,
+        onPrimary = p.textoSobreAcao,
+        primaryContainer = p.destaque,
+        onPrimaryContainer = p.acao,
+        secondary = p.texto,
+        secondaryContainer = p.destaque, // Fundo dos chips selecionados
+        onSecondaryContainer = p.acao,
+        tertiary = p.acento,
+        background = p.fundo,
+        onBackground = p.texto,
+        surface = p.superficie,
+        onSurface = p.texto,
+        surfaceVariant = p.destaque,
+        onSurfaceVariant = p.textoSecundario,
+        surfaceTint = p.acao,
+        // Sem isso, cartões e diálogos ganham o tom lilás padrão do Material 3
+        surfaceContainerLowest = p.superficie,
+        surfaceContainerLow = p.fundo,
+        surfaceContainer = p.fundo,
+        surfaceContainerHigh = p.superficie,
+        surfaceContainerHighest = p.destaque,
+        outline = p.divisao,
+        outlineVariant = p.divisao,
+        error = p.erro,
+        errorContainer = p.fundoErro,
+        onErrorContainer = p.erro
+    )
+}
 
+// Segue o modo do sistema; a cor dinâmica fica desligada pra manter a identidade
 @Composable
 fun LetsFlowTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    escuro: Boolean = isSystemInDarkTheme(), // Dá pra forçar passando true ou false
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    val paleta = if (escuro) PaletaEscura else PaletaClara
+    CompositionLocalProvider(LocalPaleta provides paleta) {
+        MaterialTheme(
+            colorScheme = esquemaMaterial(paleta, escuro),
+            typography = Typography,
+            content = content
+        )
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
 }
