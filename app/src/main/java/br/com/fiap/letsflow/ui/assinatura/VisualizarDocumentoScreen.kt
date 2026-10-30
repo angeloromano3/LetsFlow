@@ -171,7 +171,11 @@ fun VisualizarDocumentoScreen(
             Spacer(Modifier.height(12.dp))
 
             // Setas pra trocar de página
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center, // Centraliza "‹ Página X de Y ›"
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextButton(onClick = { paginaAtual-- }, enabled = paginaAtual > 0) {
                     Text("‹", fontSize = 20.sp)
                 }
