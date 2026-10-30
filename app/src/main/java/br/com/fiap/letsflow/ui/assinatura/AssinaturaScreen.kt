@@ -6,8 +6,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -15,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -37,6 +40,7 @@ import br.com.fiap.letsflow.data.local.entity.StatusDocumento
 import br.com.fiap.letsflow.data.local.storage.ArquivoAssinatura
 import br.com.fiap.letsflow.data.local.storage.RenderizadorPdf
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
+import br.com.fiap.letsflow.ui.theme.LetsFlowTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,7 +53,8 @@ private val corCampo = Color(0xFF1E88E5)
 fun AssinaturaScreen(
     documentoId: Long,
     usuarioId: Long,
-    onConcluido: () -> Unit
+    onConcluido: () -> Unit,
+    onVoltar: () -> Unit // Sai da tela sem assinar
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -111,8 +116,27 @@ fun AssinaturaScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        Text(titulo, Modifier.padding(8.dp), style = MaterialTheme.typography.titleLarge)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+    ) {
+        // Topo com seta de voltar e título
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "←",
+                fontSize = 22.sp,
+                color = if (salvando) LetsFlowTheme.cores.textoDesabilitado else LetsFlowTheme.cores.texto, // Fica cinza enquanto salva
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(enabled = !salvando) { // Bloqueada durante a gravação
+                        previa = null // Descarta a prévia não confirmada
+                        onVoltar()
+                    }
+                    .padding(8.dp)
+            )
+            Text(titulo, style = MaterialTheme.typography.titleLarge)
+        }
         Text(
             when {
                 // Mensagem quando esta foi a última assinatura
@@ -137,7 +161,12 @@ fun AssinaturaScreen(
             ) {
                 items(atual.totalPaginas) { indice ->
                     // Passa a prévia pra página desenhar nos campos
-                    PaginaAssinatura(atual, indice, campos.filter { it.pagina == indice }, previa)
+                    PaginaAssinatura(
+                        atual,
+                        indice,
+                        campos.filter { it.pagina == indice },
+                        previa
+                    )
                 }
             }
         } else {
@@ -148,12 +177,16 @@ fun AssinaturaScreen(
         when {
             jaAssinou -> Button(
                 onClick = onConcluido,
-                modifier = Modifier.fillMaxWidth().padding(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
             ) { Text("Voltar") }
 
             // Etapa de prévia: refazer ou confirmar de vez
             tracosPrevia != null -> Row(
-                Modifier.fillMaxWidth().padding(8.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Descarta a prévia e abre o quadro de novo
@@ -173,7 +206,11 @@ fun AssinaturaScreen(
                             val id = documentoSignatarioId ?: return@launch
                             salvando = true
                             val caminho = withContext(Dispatchers.IO) {
-                                ArquivoAssinatura.salvar(context, tracosPrevia, "doc_${documentoId}_sig_${id}.png")
+                                ArquivoAssinatura.salvar(
+                                    context,
+                                    tracosPrevia,
+                                    "doc_${documentoId}_sig_${id}.png"
+                                )
                             }
                             repository.assinar(documentoId, usuarioId, caminho)
                                 .onSuccess {
@@ -194,12 +231,16 @@ fun AssinaturaScreen(
                     },
                     enabled = !salvando,
                     modifier = Modifier.weight(1f)
-                ) { Text(if (salvando) "Salvando..." else "Confirmar assinatura") } // Mostra que está processando
+                ) {
+                    Text(if (salvando) "Salvando..." else "Confirmar assinatura") // Mostra que está processando
+                }
             }
 
             else -> Button(
                 onClick = { mostrarQuadro = true },
-                modifier = Modifier.fillMaxWidth().padding(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
             ) { Text("Assinar") }
         }
     }
@@ -217,7 +258,12 @@ private fun PaginaAssinatura(
     }
     val bmp = bitmap
     if (bmp == null) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.707f).background(Color.LightGray))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.707f)
+                .background(Color.LightGray)
+        )
         return
     }
 
@@ -231,7 +277,15 @@ private fun PaginaAssinatura(
     ) {
         Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
         if (tamanhoPagina != IntSize.Zero) {
-            campos.forEach { campo -> key(campo.id) { CampoParaAssinar(campo, tamanhoPagina, previa) } }
+            campos.forEach { campo ->
+                key(campo.id) {
+                    CampoParaAssinar(
+                        campo,
+                        tamanhoPagina,
+                        previa
+                    )
+                }
+            }
         }
     }
 }
@@ -244,7 +298,9 @@ private fun CampoParaAssinar(
 ) {
     val density = LocalDensity.current
     val caminho = campo.caminhoAssinatura
-    val imagem = remember(caminho) { caminho?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
+    val imagem = remember(caminho) {
+        caminho?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+    }
 
     Box(
         Modifier
@@ -259,7 +315,9 @@ private fun CampoParaAssinar(
                 with(density) { (campo.altura * tamanhoPagina.height).toDp() }
             )
             .then(
-                if (imagem == null) Modifier.background(corCampo.copy(alpha = 0.15f)).border(2.dp, corCampo)
+                if (imagem == null) Modifier
+                    .background(corCampo.copy(alpha = 0.15f))
+                    .border(2.dp, corCampo)
                 else Modifier
             )
     ) {
@@ -274,7 +332,12 @@ private fun CampoParaAssinar(
             previa != null -> Canvas(Modifier.fillMaxSize()) {
                 previa.forEach { desenharTracoPrevia(it) }
             }
-            else -> Text("Assine aqui", Modifier.align(Alignment.Center), color = corCampo, fontSize = 10.sp)
+            else -> Text(
+                "Assine aqui",
+                Modifier.align(Alignment.Center),
+                color = corCampo,
+                fontSize = 10.sp
+            )
         }
     }
 }
