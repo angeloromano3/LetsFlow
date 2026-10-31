@@ -6,20 +6,20 @@ import androidx.compose.ui.graphics.Color
 // Cada papel de cor do Figma; o tema escolhe a versão clara ou escura
 @Immutable
 data class PaletaLetsFlow(
-    val acao: Color,              // Botões, links e abas ativas
-    val textoSobreAcao: Color,    // Texto em cima do azul de ação
-    val fundo: Color,             // Fundo das telas
-    val superficie: Color,        // Cartões e diálogos
-    val destaque: Color,          // Azul claro: realce e etiqueta "Aguardando"
-    val texto: Color,             // Texto principal
-    val textoSecundario: Color,   // Legendas e metadados
-    val divisao: Color,           // Bordas e linhas
-    val acento: Color,            // Terracota
-    val pendente: Color,          // Em andamento / pendente
+    val acao: Color,             // Botões, links e abas ativas
+    val textoSobreAcao: Color,   // Texto em cima do azul de ação
+    val fundo: Color,            // Fundo das telas
+    val superficie: Color,       // Cartões e diálogos
+    val destaque: Color,         // Azul claro: realce e etiqueta "Aguardando"
+    val texto: Color,            // Texto principal
+    val textoSecundario: Color,  // Legendas e metadados
+    val divisao: Color,          // Bordas e linhas
+    val acento: Color,           // Terracota
+    val pendente: Color,         // Em andamento / pendente
     val fundoPendente: Color,
-    val concluido: Color,         // Concluído / sucesso
+    val concluido: Color,        // Concluído / sucesso
     val fundoConcluido: Color,
-    val erro: Color,              // Erro / bloqueio
+    val erro: Color,             // Erro / bloqueio
     val fundoErro: Color,
     val fundoDesabilitado: Color,
     val textoDesabilitado: Color
@@ -46,7 +46,7 @@ val PaletaClara = PaletaLetsFlow(
     textoDesabilitado = Color(0xFF64748B)
 )
 
-// Versão escura derivada do Figma (proposta, falta aprovação da Amanda)
+// Versão escura derivada do Figma
 val PaletaEscura = PaletaLetsFlow(
     acao = Color(0xFF8FB4DA),
     textoSobreAcao = Color(0xFF0F2438),
@@ -66,3 +66,15 @@ val PaletaEscura = PaletaLetsFlow(
     fundoDesabilitado = Color(0xFF243444),
     textoDesabilitado = Color(0xFF6B7B8C)
 )
+
+// Cores que identificam cada signatário nos campos; ficam sobre o papel branco, então não mudam no modo escuro
+val CoresSignatarios = listOf(
+    Color(0xFF1E88E5), // Azul
+    Color(0xFFE53935), // Vermelho
+    Color(0xFF43A047), // Verde
+    Color(0xFFFB8C00), // Laranja
+    Color(0xFF8E24AA)  // Roxo
+)
+
+// Cor da pessoa pela posição dela na lista; recomeça do início se houver mais pessoas que cores
+fun corDoSignatario(indice: Int) = CoresSignatarios[indice % CoresSignatarios.size]
