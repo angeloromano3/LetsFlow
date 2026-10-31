@@ -12,25 +12,28 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -42,21 +45,29 @@ import br.com.fiap.letsflow.data.local.entity.Usuario
 import br.com.fiap.letsflow.data.local.model.SignatarioDoDocumento
 import br.com.fiap.letsflow.data.local.storage.RenderizadorPdf
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
+import br.com.fiap.letsflow.ui.componentes.BotaoPrimario
+import br.com.fiap.letsflow.ui.componentes.ControlesZoom
+import br.com.fiap.letsflow.ui.componentes.ZOOM_MINIMO
+import br.com.fiap.letsflow.ui.theme.LetsFlowTheme
+import br.com.fiap.letsflow.ui.theme.corDoSignatario
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
-// Cores fixas por posição do signatário na lista (substitui as cores dos testSigners)
-private val coresSignatarios = listOf(
-    Color(0xFF1E88E5), Color(0xFFE53935), Color(0xFF43A047), Color(0xFFFB8C00), Color(0xFF8E24AA)
-)
-
-private fun corDoIndice(indice: Int) = coresSignatarios[indice % coresSignatarios.size]
 
 // Nome do papel pra mostrar na tela
 private fun Papel.rotulo() = when (this) {
     Papel.CONTRATANTE -> "Contratante"
     Papel.CONTRATADO -> "Contratado"
     Papel.TESTEMUNHA -> "Testemunha"
+}
+
+// Iniciais do nome pro círculo da pessoa (ex.: "Maria Souza" -> "MS")
+private fun iniciais(nome: String): String {
+    val partes = nome.trim().split(" ").filter { it.isNotBlank() }
+    return when {
+        partes.isEmpty() -> "?"
+        partes.size == 1 -> partes[0].take(1).uppercase()
+        else -> (partes.first().take(1) + partes.last().take(1)).uppercase()
+    }
 }
 
 @Composable
@@ -66,6 +77,8 @@ fun PosicionamentoScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val cores = LetsFlowTheme.cores // Paleta clara ou escura do tema
+    val tipografia = MaterialTheme.typography // Estilos do Figma
 
     // Monta o repositório a partir do banco único do app
     val repository = remember {
@@ -87,6 +100,8 @@ fun PosicionamentoScreen(
     val disponiveis = remember { mutableStateListOf<Usuario>() }
     // Controla a janela de edição de signatários
     var mostrarSignatarios by remember { mutableStateOf(false) }
+    // Zoom atual do PDF: 1 = largura da tela, 3 = três vezes maior
+    var zoom by remember { mutableFloatStateOf(ZOOM_MINIMO) }
 
     // Recarrega do banco a lista de signatários e a de disponíveis, mantendo a seleção se ainda existir
     suspend fun recarregarSignatarios() {
@@ -147,73 +162,149 @@ fun PosicionamentoScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        Text(
-            "Toque na página para criar um campo. Segure para apagar.",
-            Modifier.padding(8.dp),
-            style = MaterialTheme.typography.bodyMedium
-        )
+    // Libera o botão só quando cada pessoa tiver pelo menos um campo
+    val todosComCampo = signatarios.isNotEmpty() && signatarios.all { signatario ->
+        campos.any { it.documentoSignatarioId == signatario.documentoSignatarioId }
+    }
 
-        // Abre a janela de edição, mostrando quantos signatários há
-        OutlinedButton(
-            onClick = { mostrarSignatarios = true },
-            modifier = Modifier.padding(horizontal = 8.dp)
-        ) { Text("Signatários (${signatarios.size})") }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(cores.fundo) // Fundo do tema, acompanha o modo escuro
+            .safeDrawingPadding()
+    ) {
+        // Cabeçalho compacto: título, etapa e atalho pra editar pessoas
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Posicionar assinaturas",
+                    style = tipografia.headlineMedium,
+                    color = cores.texto,
+                    modifier = Modifier.weight(1f)
+                )
+                // Abre a janela de edição, mostrando quantos signatários há
+                TextButton(onClick = { mostrarSignatarios = true }) {
+                    Text("Pessoas (${signatarios.size})", color = cores.acao)
+                }
+            }
+            Text("Etapa 2 de 3", style = tipografia.bodySmall, color = cores.textoSecundario)
+            Spacer(Modifier.height(8.dp))
+            // Instrução curta no topo
+            Text(
+                "Escolha a pessoa e toque na página para criar o campo. Arraste para mover e segure para apagar.",
+                style = tipografia.bodySmall,
+                color = cores.textoSecundario
+            )
+        }
 
-        // Seletor de quem vai assinar os próximos campos, agora com os signatários reais
+        // Fileira única de nomes que rola para o lado; não cresce para baixo com mais pessoas
         Row(
             Modifier
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             signatarios.forEachIndexed { indice, signatario ->
-                val cor = corDoIndice(indice)
+                val cor = corDoSignatario(indice) // Cor da pessoa vem do tema
                 val ativo = signatario.documentoSignatarioId == selecionado?.documentoSignatarioId
-                Text(
-                    text = signatario.nome,
-                    color = if (ativo) Color.White else cor,
+                // Quantos campos essa pessoa já tem
+                val quantidadeCampos = campos.count { it.documentoSignatarioId == signatario.documentoSignatarioId }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .background(if (ativo) cor else Color.Transparent, RoundedCornerShape(50))
                         .border(2.dp, cor, RoundedCornerShape(50))
                         .clickable { selecionado = signatario }
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                )
+                        .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp)
+                ) {
+                    // Círculo com as iniciais, na cor da pessoa
+                    Box(
+                        Modifier
+                            .size(26.dp)
+                            .background(if (ativo) Color.White else cor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            iniciais(signatario.nome),
+                            color = if (ativo) cor else Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    // Primeiro nome e contador de campos, numa linha só
+                    Text(
+                        "${signatario.nome.substringBefore(" ")} · $quantidadeCampos",
+                        color = if (ativo) Color.White else cor,
+                        style = tipografia.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
         erro?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp))
+            Text(
+                it,
+                color = cores.erro,
+                style = tipografia.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
         }
 
         if (atual != null) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(8.dp)
+            // Área do PDF com os botões de zoom flutuando por cima
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(cores.divisao) // "Mesa" cinza atrás das páginas
             ) {
-                items(atual.totalPaginas) { indice ->
-                    PaginaItem(
-                        renderizador = atual,
-                        indice = indice,
-                        documentoId = documentoId,
-                        campos = campos,
-                        signatarios = signatarios,
-                        selecionado = selecionado,
-                        repository = repository
-                    )
+                // Largura da página sem zoom: a tela menos as margens
+                val larguraBase = maxWidth - 24.dp
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(rememberScrollState()), // Arrasta pro lado quando a página passa da tela
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(12.dp)
+                ) {
+                    items(atual.totalPaginas) { indice ->
+                        PaginaItem(
+                            renderizador = atual,
+                            indice = indice,
+                            documentoId = documentoId,
+                            campos = campos,
+                            signatarios = signatarios,
+                            selecionado = selecionado,
+                            repository = repository,
+                            largura = larguraBase * zoom // Página cresce de verdade com o zoom
+                        )
+                    }
                 }
+
+                // Botões flutuantes no canto inferior direito, acima do "Revisar documento"
+                ControlesZoom(
+                    zoom = zoom,
+                    onZoomChange = { zoom = it },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd) // Canto inferior direito
+                        .padding(16.dp)
+                )
             }
         } else {
             Spacer(Modifier.weight(1f))
         }
 
         // Substitui o "Logar campos": salva todas as posições finais de uma vez
-        Button(
+        BotaoPrimario(
+            texto = "Revisar documento →",
             onClick = {
                 scope.launch {
-                    val semCampo = signatarios.filter { s ->
-                        campos.none { it.documentoSignatarioId == s.documentoSignatarioId }
+                    val semCampo = signatarios.filter { signatario ->
+                        campos.none { it.documentoSignatarioId == signatario.documentoSignatarioId }
                     }
                     if (semCampo.isNotEmpty()) {
                         erro = "Falta campo para: ${semCampo.joinToString { it.nome }}"
@@ -223,8 +314,11 @@ fun PosicionamentoScreen(
                     onContinuar()
                 }
             },
-            modifier = Modifier.fillMaxWidth().padding(8.dp)
-        ) { Text("Continuar") }
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            habilitado = todosComCampo // Cinza enquanto alguém estiver sem campo
+        )
     }
 }
 
@@ -247,10 +341,10 @@ private fun SignatariosDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("No documento", style = MaterialTheme.typography.titleSmall)
-                signatarios.forEach { s ->
+                signatarios.forEach { signatario ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${s.nome} (${s.papel.rotulo()})", Modifier.weight(1f))
-                        TextButton(onClick = { onRemover(s) }) { Text("Remover") }
+                        Text("${signatario.nome} (${signatario.papel.rotulo()})", Modifier.weight(1f))
+                        TextButton(onClick = { onRemover(signatario) }) { Text("Remover") }
                     }
                 }
 
@@ -262,18 +356,18 @@ private fun SignatariosDialog(
                         Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Papel.entries.forEach { p ->
+                        Papel.entries.forEach { opcao ->
                             FilterChip(
-                                selected = papel == p,
-                                onClick = { papel = p },
-                                label = { Text(p.rotulo()) }
+                                selected = papel == opcao,
+                                onClick = { papel = opcao },
+                                label = { Text(opcao.rotulo(), maxLines = 1) } // Não quebra "Testemunha"
                             )
                         }
                     }
-                    disponiveis.forEach { u ->
+                    disponiveis.forEach { usuario ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(u.nomeCompleto, Modifier.weight(1f))
-                            TextButton(onClick = { onAdicionar(u, papel) }) { Text("Adicionar") }
+                            Text(usuario.nomeCompleto, Modifier.weight(1f))
+                            TextButton(onClick = { onAdicionar(usuario, papel) }) { Text("Adicionar") }
                         }
                     }
                 }
@@ -290,15 +384,19 @@ private fun PaginaItem(
     campos: SnapshotStateList<CampoAssinatura>,
     signatarios: List<SignatarioDoDocumento>,
     selecionado: SignatarioDoDocumento?,
-    repository: DocumentoRepository
+    repository: DocumentoRepository,
+    largura: Dp // Largura da página já com o zoom aplicado
 ) {
     val scope = rememberCoroutineScope()
-    val bitmap by produceState<Bitmap?>(null, renderizador, indice) {
+    // Estado que recebe a página renderizada em segundo plano
+    val imagemCarregada by produceState<Bitmap?>(null, renderizador, indice) {
         value = renderizador.renderizarPagina(indice)
     }
-    val bmp = bitmap
-    if (bmp == null) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.707f).background(Color.LightGray))
+    // Cópia fixa do estado, pra o Kotlin deixar usar sem checar null de novo
+    val imagemPagina = imagemCarregada
+    if (imagemPagina == null) {
+        // Página branca enquanto carrega, como papel
+        Box(Modifier.width(largura).aspectRatio(0.707f).background(Color.White))
         return
     }
 
@@ -307,29 +405,31 @@ private fun PaginaItem(
 
     Box(
         Modifier
-            .fillMaxWidth()
-            .aspectRatio(bmp.width / bmp.height.toFloat())
+            .width(largura) // Usa a largura com zoom em vez de ocupar só a tela
+            .aspectRatio(imagemPagina.width / imagemPagina.height.toFloat())
+            .shadow(4.dp) // Sombrinha da folha sobre a mesa
+            .background(Color.White) // Página sempre branca, mesmo no modo escuro
             .onSizeChanged { tamanhoPagina = it }
             .pointerInput(indice) {
-                detectTapGestures { offset ->
+                detectTapGestures { toque ->
                     val signatario = atualSelecionado ?: return@detectTapGestures
-                    val w = CampoAssinatura.LARGURA_PADRAO
-                    val h = CampoAssinatura.ALTURA_PADRAO
+                    val larguraPadrao = CampoAssinatura.LARGURA_PADRAO
+                    val alturaPadrao = CampoAssinatura.ALTURA_PADRAO
                     val novo = CampoAssinatura(
                         documentoId = documentoId,
                         documentoSignatarioId = signatario.documentoSignatarioId,
                         pagina = indice,
-                        posicaoX = (offset.x / size.width).coerceIn(0f, 1f - w),
-                        posicaoY = (offset.y / size.height).coerceIn(0f, 1f - h),
-                        largura = w,
-                        altura = h
+                        posicaoX = (toque.x / size.width).coerceIn(0f, 1f - larguraPadrao),
+                        posicaoY = (toque.y / size.height).coerceIn(0f, 1f - alturaPadrao),
+                        largura = larguraPadrao,
+                        altura = alturaPadrao
                     )
                     // Salva no banco na hora e coloca na tela já com o id real
                     scope.launch { campos += repository.adicionarCampo(novo) }
                 }
             }
     ) {
-        Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
+        Image(imagemPagina.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
 
         campos.filter { it.pagina == indice }.forEach { campo ->
             key(campo.id) {
@@ -337,12 +437,12 @@ private fun PaginaItem(
                 CampoBox(
                     campo = campo,
                     nome = signatarios.getOrNull(posicao)?.nome ?: "",
-                    cor = corDoIndice(posicao.coerceAtLeast(0)),
+                    cor = corDoSignatario(posicao.coerceAtLeast(0)), // Cor da pessoa vem do tema
                     tamanhoPagina = tamanhoPagina,
                     onMover = { atualizado ->
                         // Mover só atualiza a tela; o banco é gravado no Continuar
-                        val i = campos.indexOfFirst { it.id == atualizado.id }
-                        if (i >= 0) campos[i] = atualizado
+                        val posicaoNaLista = campos.indexOfFirst { it.id == atualizado.id }
+                        if (posicaoNaLista >= 0) campos[posicaoNaLista] = atualizado
                     },
                     onRemover = {
                         // Apagar remove do banco na hora
@@ -390,37 +490,47 @@ private fun CampoBox(
                 detectTapGestures(onLongPress = { onRemover() })
             }
             .pointerInput(tamanhoPagina) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val f = atualCampo
-                    val novaL = (f.largura * zoom).coerceIn(0.05f, 1f)
-                    val novaA = (f.altura * zoom).coerceIn(0.03f, 1f)
-                    val cx = f.posicaoX + f.largura / 2 + pan.x / tamanhoPagina.width
-                    val cy = f.posicaoY + f.altura / 2 + pan.y / tamanhoPagina.height
+                detectTransformGestures { _, movimento, escala, _ ->
+                    // O campo antes do gesto, o novo tamanho e o centro do campo
+                    val campoAntes = atualCampo
+                    val novaLargura = (campoAntes.largura * escala).coerceIn(0.05f, 1f)
+                    val novaAltura = (campoAntes.altura * escala).coerceIn(0.03f, 1f)
+                    val centroX = campoAntes.posicaoX + campoAntes.largura / 2 + movimento.x / tamanhoPagina.width
+                    val centroY = campoAntes.posicaoY + campoAntes.altura / 2 + movimento.y / tamanhoPagina.height
                     atualOnMover(
-                        f.copy(
-                            posicaoX = (cx - novaL / 2).coerceIn(0f, 1f - novaL),
-                            posicaoY = (cy - novaA / 2).coerceIn(0f, 1f - novaA),
-                            largura = novaL,
-                            altura = novaA
+                        campoAntes.copy(
+                            posicaoX = (centroX - novaLargura / 2).coerceIn(0f, 1f - novaLargura),
+                            posicaoY = (centroY - novaAltura / 2).coerceIn(0f, 1f - novaAltura),
+                            largura = novaLargura,
+                            altura = novaAltura
                         )
                     )
                 }
             }
     ) {
-        Text(nome, Modifier.align(Alignment.Center), color = cor, fontSize = 10.sp)
+        Text(
+            nome,
+            Modifier.align(Alignment.Center),
+            color = cor,
+            fontSize = 10.sp,
+            maxLines = 1, // Nome numa linha só dentro do campo
+            overflow = TextOverflow.Ellipsis
+        )
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
                 .size(16.dp)
                 .background(cor)
                 .pointerInput(tamanhoPagina) {
-                    detectDragGestures { change, drag ->
+                    detectDragGestures { change, arraste ->
                         change.consume()
-                        val f = atualCampo
+                        val campoAntes = atualCampo // Campo antes de arrastar o cantinho
                         atualOnMover(
-                            f.copy(
-                                largura = (f.largura + drag.x / tamanhoPagina.width).coerceIn(0.05f, 1f - f.posicaoX),
-                                altura = (f.altura + drag.y / tamanhoPagina.height).coerceIn(0.03f, 1f - f.posicaoY)
+                            campoAntes.copy(
+                                largura = (campoAntes.largura + arraste.x / tamanhoPagina.width)
+                                    .coerceIn(0.05f, 1f - campoAntes.posicaoX),
+                                altura = (campoAntes.altura + arraste.y / tamanhoPagina.height)
+                                    .coerceIn(0.03f, 1f - campoAntes.posicaoY)
                             )
                         )
                     }
