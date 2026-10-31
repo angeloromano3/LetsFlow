@@ -53,15 +53,15 @@ import br.com.fiap.letsflow.ui.theme.corDoSignatario
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-// Nome do papel pra mostrar na tela
-private fun Papel.rotulo() = when (this) {
+// Nome do papel para mostrar na tela (a NovoDocumentoScreen também usa)
+fun Papel.rotulo() = when (this) {
     Papel.CONTRATANTE -> "Contratante"
     Papel.CONTRATADO -> "Contratado"
     Papel.TESTEMUNHA -> "Testemunha"
 }
 
-// Iniciais do nome pro círculo da pessoa (ex.: "Maria Souza" -> "MS")
-private fun iniciais(nome: String): String {
+// Iniciais do nome para o círculo da pessoa (ex.: "Maria Souza" -> "MS"); sem private: a NovoDocumentoScreen também usa
+fun iniciais(nome: String): String {
     val partes = nome.trim().split(" ").filter { it.isNotBlank() }
     return when {
         partes.isEmpty() -> "?"
