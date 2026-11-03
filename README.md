@@ -2,7 +2,7 @@
 
 Aplicativo Android nativo para preparar, enviar e assinar documentos PDF pelo celular, com dois perfis: **Admin** e **Signatário**.
 
-Projeto do **Challenge FIAP 2TDSO** em parceria com a **LetsSign** — Sprint 1.
+Projeto do **Challenge FIAP 2TDSOS** em parceria com a **LetsSign** — Sprint 1.
 
 > Na Sprint 1 o app funciona 100% local: os dados ficam no banco Room do próprio celular. Envio por e-mail, notificações, deeplinks e backend (Spring Boot + MongoDB) fazem parte da Sprint 2.
 
