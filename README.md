@@ -112,7 +112,7 @@ Os usuários abaixo são criados automaticamente na primeira vez que o app abre.
 
 ---
 
-## Equipe — 2TDSO
+## Equipe — 2TDSOS
 
 | Nome | RM |
 |---|---|
