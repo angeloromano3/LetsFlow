@@ -118,6 +118,6 @@ Os usuários abaixo são criados automaticamente na primeira vez que o app abre.
 |---|---|
 | Angelo Romano | RM567274 |
 | Amanda Uechis | RM566892|
-| Ani Lopes | RM567472 |
+| Aniole Lopes | RM567472 |
 | Grace Camara | RM567589 |
 | Mariana Malvão | RM567541 |
