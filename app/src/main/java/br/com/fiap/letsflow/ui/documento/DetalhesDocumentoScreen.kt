@@ -21,8 +21,12 @@ import br.com.fiap.letsflow.data.local.entity.Evento
 import br.com.fiap.letsflow.data.local.entity.StatusDocumento
 import br.com.fiap.letsflow.data.local.model.SignatarioDoDocumento
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
+import br.com.fiap.letsflow.ui.theme.LetsFlowTheme
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 // Suporte aos ícones utilizados sem necessidade de alterar as dependências do projeto
 private object Icons {
@@ -115,6 +119,9 @@ private object Icons {
     }
 }
 
+private val formatoDataHora = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.forLanguageTag("pt-BR"))
+private fun formatarDataHora(millis: Long): String = formatoDataHora.format(Date(millis))
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetalhesDocumentoScreen(
@@ -124,6 +131,7 @@ fun DetalhesDocumentoScreen(
     onVisualizarDocumentoClick: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val cores = LetsFlowTheme.cores
     var documento by remember { mutableStateOf<Documento?>(null) }
     var signatarios by remember { mutableStateOf<List<SignatarioDoDocumento>>(emptyList()) }
     var eventos by remember { mutableStateOf<List<Evento>>(emptyList()) }
@@ -216,6 +224,8 @@ fun DetalhesDocumentoScreen(
                 null -> "Desconhecido"
             }
 
+            val isConcluido = statusTexto == "Concluído"
+
             LazyColumn(
                 modifier = modifier
                     .fillMaxSize()
@@ -234,8 +244,8 @@ fun DetalhesDocumentoScreen(
                                 onClick = {},
                                 label = { Text(statusTexto) },
                                 colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = if (statusTexto == "Concluído") Color(0xFFD4EDDA) else Color(0xFFFFF3CD),
-                                    labelColor = if (statusTexto == "Concluído") Color(0xFF155724) else Color(0xFF856404)
+                                    containerColor = if (isConcluido) cores.fundoConcluido else cores.fundoPendente,
+                                    labelColor = if (isConcluido) cores.concluido else cores.pendente
                                 )
                             )
 
@@ -311,7 +321,7 @@ fun DetalhesDocumentoScreen(
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = item.papel.name.lowercase().replaceFirstChar { it.uppercase() },
+                                text = item.papel.rotulo(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -322,29 +332,34 @@ fun DetalhesDocumentoScreen(
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = "Assinado",
-                                    tint = Color(0xFF2E7D32),
+                                    tint = cores.concluido,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
+                                val textoAssinatura = if (item.dataAssinatura != null) {
+                                    "Assinado • ${formatarDataHora(item.dataAssinatura)}"
+                                } else {
+                                    "Assinado"
+                                }
                                 Text(
-                                    text = "Assinado",
+                                    text = textoAssinatura,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFF2E7D32)
+                                    color = cores.concluido
                                 )
                             }
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Schedule,
-                                    contentDescription = "Aguardando",
-                                    tint = Color(0xFFE65100),
+                                    contentDescription = "Aguardando assinatura",
+                                    tint = cores.pendente,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    text = "Aguardando",
+                                    text = "Aguardando assinatura",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color(0xFFE65100)
+                                    color = cores.pendente
                                 )
                             }
                         }
@@ -361,7 +376,10 @@ fun DetalhesDocumentoScreen(
                     )
                 }
 
-                items(eventos) { ev ->
+                // Eventos ordenados do mais novo para o mais antigo, conforme o checklist
+                val eventosOrdenados = eventos.sortedByDescending { it.dataHora }
+
+                items(eventosOrdenados) { ev ->
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -370,6 +388,11 @@ fun DetalhesDocumentoScreen(
                         Text(
                             text = ev.descricao,
                             style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = formatarDataHora(ev.dataHora),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
