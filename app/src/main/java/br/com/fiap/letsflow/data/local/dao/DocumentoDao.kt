@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Update
 import br.com.fiap.letsflow.data.local.entity.Documento
 import br.com.fiap.letsflow.data.local.entity.StatusDocumento
+import br.com.fiap.letsflow.data.local.model.DocumentoComContagem
 import br.com.fiap.letsflow.data.local.model.DocumentoRecebido
 import kotlinx.coroutines.flow.Flow
 
@@ -21,6 +22,21 @@ interface DocumentoDao {
     // Filtra pelo adminId: um Admin só vê os próprios documentos
     @Query("SELECT * FROM documentos WHERE adminId = :adminId ORDER BY dataCriacao DESC")
     fun listarDoAdmin(adminId: Long): Flow<List<Documento>>
+
+    // Mesma lista do Admin, mas já com o contador "X de Y" de cada documento.
+    // As duas subconsultas leem documento_signatarios; o Room observa as duas tabelas,
+    // então o Flow emite de novo quando um documento é enviado ou alguém assina
+    @Query("""
+        SELECT d.*,
+               (SELECT COUNT(*) FROM documento_signatarios ds
+                WHERE ds.documentoId = d.id) AS totalSignatarios,
+               (SELECT COUNT(*) FROM documento_signatarios ds
+                WHERE ds.documentoId = d.id AND ds.assinado = 1) AS assinados
+        FROM documentos d
+        WHERE d.adminId = :adminId
+        ORDER BY d.dataCriacao DESC
+    """)
+    fun listarComContagemDoAdmin(adminId: Long): Flow<List<DocumentoComContagem>>
 
     @Query("SELECT * FROM documentos WHERE id = :id")
     suspend fun buscarPorId(id: Long): Documento?

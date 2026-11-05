@@ -21,7 +21,8 @@ class DocumentoRepository(
     private val eventoDao: EventoDao
 ) {
 
-    fun listarDoAdmin(adminId: Long) = documentoDao.listarDoAdmin(adminId)
+    // Documentos do Admin com a contagem de assinaturas; o Flow se atualiza sozinho
+    fun listarDoAdmin(adminId: Long) = documentoDao.listarComContagemDoAdmin(adminId)
 
     fun listarRecebidos(usuarioId: Long) = documentoDao.listarRecebidos(usuarioId)
 
