@@ -138,7 +138,7 @@ private fun ListaSignatariosConteudo(
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "Buscar *",
+                text = "Buscar",
                 style = tipografia.labelLarge,
                 color = cores.texto
             )
