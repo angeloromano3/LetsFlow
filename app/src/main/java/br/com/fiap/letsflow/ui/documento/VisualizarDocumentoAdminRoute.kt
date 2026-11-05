@@ -161,7 +161,8 @@ fun VisualizarDocumentoAdminRoute(
                             posicaoX = campo.posicaoX,
                             posicaoY = campo.posicaoY,
                             largura = campo.largura,
-                            altura = campo.altura
+                            altura = campo.altura,
+                            caminhoAssinatura = campo.caminhoAssinatura // Passa a assinatura de quem já assinou
                         )
                     }
             } else {
