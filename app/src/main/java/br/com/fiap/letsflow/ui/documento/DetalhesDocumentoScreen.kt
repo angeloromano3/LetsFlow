@@ -69,12 +69,13 @@ fun DetalhesDocumentoScreen(
             TopAppBar(
                 title = {
                     Column {
+
                         Text(
                             text = "Detalhes do documento",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
                             color = cores.texto
                         )
+
                         Text(
                             text = documento?.titulo ?: "Carregando...",
                             style = MaterialTheme.typography.bodySmall,
@@ -206,8 +207,7 @@ fun DetalhesDocumentoScreen(
                 item {
                     Text(
                         text = "Participantes",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
                         color = cores.texto
                     )
                 }
@@ -295,10 +295,10 @@ fun DetalhesDocumentoScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Histórico de eventos",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
                         color = cores.texto
                     )
+
                 }
 
                 val eventosOrdenados = eventos.sortedByDescending { it.dataHora }

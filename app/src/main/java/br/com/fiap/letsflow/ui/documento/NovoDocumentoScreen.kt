@@ -22,6 +22,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,18 +80,20 @@ fun NovoDocumentoScreen(
     }
     val arquivoPdf = remember { ArquivoPdf(context) }
 
-    var titulo by remember { mutableStateOf("") }
-    var caminhoPdf by remember { mutableStateOf<String?>(null) }
+    // rememberSaveable guarda os campos quando a navegação sai para o cadastro e volta
+    var titulo by rememberSaveable { mutableStateOf("") }
+    var caminhoPdf by rememberSaveable { mutableStateOf<String?>(null) }
     var mensagem by remember { mutableStateOf<String?>(null) }
-    var nomeArquivo by remember { mutableStateOf("") } // Nome que aparece no card do PDF
-    var totalPaginas by remember { mutableIntStateOf(0) }
-    var pdfInvalido by remember { mutableStateOf(false) } // Mostra a caixa vermelha do Figma
+    var nomeArquivo by rememberSaveable { mutableStateOf("") } // Nome que aparece no card do PDF
+    var totalPaginas by rememberSaveable { mutableStateOf(0) }
+    var pdfInvalido by rememberSaveable { mutableStateOf(false) } // Mostra a caixa vermelha do Figma
     var carregandoPdf by remember { mutableStateOf(false) }
-    var busca by remember { mutableStateOf("") }
+    var busca by rememberSaveable { mutableStateOf("") }
     var salvando by remember { mutableStateOf(false) } // Evita salvar duas vezes
 
     // Signatários marcados: id do usuário -> papel
-    val selecionados = remember { mutableStateMapOf<Long, Papel>() }
+    // Signatários marcados: id do usuário -> papel; o saver ensina o rememberSaveable a guardar o mapa
+    val selecionados = rememberSaveable(saver = salvarSelecionados) { mutableStateMapOf<Long, Papel>() }
 
     // A lista atualiza sozinha por causa do Flow
     val signatarios by usuarioRepository.listarSignatarios().collectAsState(initial = emptyList())
@@ -568,3 +574,13 @@ private fun nomeDoArquivo(context: Context, uri: Uri): String =
         .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
         ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
         ?: "documento.pdf"
+
+// O rememberSaveable não sabe guardar um mapa sozinho: aqui ele vira texto (id -> nome do papel) e volta
+private val salvarSelecionados: Saver<SnapshotStateMap<Long, Papel>, Any> = mapSaver(
+    save = { mapa -> mapa.entries.associate { (id, papel) -> id.toString() to papel.name } },
+    restore = { salvo ->
+        mutableStateMapOf<Long, Papel>().apply {
+            salvo.forEach { (id, papel) -> put(id.toLong(), Papel.valueOf(papel as String)) }
+        }
+    }
+)

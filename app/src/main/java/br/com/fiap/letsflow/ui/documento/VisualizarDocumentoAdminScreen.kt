@@ -5,6 +5,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +20,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +43,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.fiap.letsflow.ui.componentes.ControlesZoom
+import br.com.fiap.letsflow.ui.componentes.ZOOM_MINIMO
 import br.com.fiap.letsflow.ui.theme.LetsFlowTheme
 
 // Um campo de assinatura desenhado em cima da página. As posições são frações da página (0 a 1)
@@ -49,7 +58,7 @@ data class CampoVisualizacaoUi(
 
 // Modo somente leitura: mostra a página do PDF e os campos, sem permitir mexer em nada
 @Composable
-fun VisualizarDocumentoScreen(
+fun VisualizarDocumentoAdminScreen(
     tituloDoDocumento: String,
     paginaAtual: Bitmap?, // Nulo enquanto a página ainda está sendo desenhada
     indicePagina: Int, // Começa em 0
@@ -62,6 +71,10 @@ fun VisualizarDocumentoScreen(
 ) {
     val cores = LetsFlowTheme.cores
     val tipografia = MaterialTheme.typography
+
+    // Zoom atual da página: 1 = largura da área, até 3 vezes maior (mesmo padrão da tela do signatário)
+    var zoom by remember { mutableFloatStateOf(ZOOM_MINIMO) }
+
     val proporcaoDaPagina = if (paginaAtual != null) {
         paginaAtual.width / paginaAtual.height.toFloat()
     } else {
@@ -73,8 +86,8 @@ fun VisualizarDocumentoScreen(
             .fillMaxSize()
             .background(cores.fundo)
             .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+            // Sem rolagem na tela toda: agora só a área da página rola, para o zoom funcionar
+            .padding(horizontal = 16.dp) // Margem menor deixa a página maior
     ) {
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -111,35 +124,56 @@ fun VisualizarDocumentoScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Moldura em volta da página, como no Figma
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
+                .weight(1f) // Ocupa todo o espaço que sobra entre os textos e a navegação
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(cores.destaque)
-                .padding(10.dp)
         ) {
-            BoxWithConstraints(
+            // Largura da página sem zoom: a área da moldura menos as margens
+            val larguraBase = maxWidth - 12.dp
+
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(proporcaoDaPagina)
-                    // O PDF é sempre branco, como papel, mesmo no modo escuro
-                    .background(Color.White)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()) // Com zoom, dá para arrastar para cima e para baixo
+                    .horizontalScroll(rememberScrollState()) // E também para os lados
+                    .padding(6.dp)
             ) {
-                if (paginaAtual != null) {
-                    Image(
-                        bitmap = paginaAtual.asImageBitmap(),
-                        contentDescription = "Página ${indicePagina + 1} do documento",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                camposDaPagina.forEach { campo ->
-                    CampoSomenteLeitura(
-                        campo = campo,
-                        larguraDaPagina = maxWidth,
-                        alturaDaPagina = maxHeight
-                    )
+                BoxWithConstraints(
+                    modifier = Modifier
+                        .width(larguraBase * zoom) // A página cresce de verdade com o zoom
+                        .aspectRatio(proporcaoDaPagina)
+                        // O PDF é sempre branco, como papel, mesmo no modo escuro
+                        .background(Color.White)
+                ) {
+                    if (paginaAtual != null) {
+                        Image(
+                            bitmap = paginaAtual.asImageBitmap(),
+                            contentDescription = "Página ${indicePagina + 1} do documento",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    camposDaPagina.forEach { campo ->
+                        CampoSomenteLeitura(
+                            campo = campo,
+                            larguraDaPagina = maxWidth,
+                            alturaDaPagina = maxHeight
+                        )
+                    }
                 }
             }
+
+            // Mesmos botões de zoom da tela do signatário, flutuando no canto inferior direito
+            ControlesZoom(
+                zoom = zoom,
+                onZoomChange = { zoom = it },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp)
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -151,7 +185,7 @@ fun VisualizarDocumentoScreen(
             onProximaPagina = onProximaPagina
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -202,7 +236,12 @@ private fun NavegacaoDePaginas(
     val temAnterior = indicePagina > 0
     val temProxima = indicePagina < totalPaginas - 1
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // fillMaxWidth com Arrangement.Center deixa "‹ Página X de Y ›" no meio da tela
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Text(
             text = "‹",
             fontSize = 22.sp,
@@ -233,7 +272,7 @@ private const val PROPORCAO_DE_FOLHA_A4 = 0.707f
 @Composable
 private fun VisualizarDocumentoPreview() {
     LetsFlowTheme {
-        VisualizarDocumentoScreen(
+        VisualizarDocumentoAdminScreen(
             tituloDoDocumento = "Contrato de Prestação de Serviços",
             paginaAtual = null,
             indicePagina = 2,
