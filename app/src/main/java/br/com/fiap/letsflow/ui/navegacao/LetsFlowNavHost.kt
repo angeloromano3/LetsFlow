@@ -12,8 +12,7 @@ import br.com.fiap.letsflow.data.local.AppDatabase
 import br.com.fiap.letsflow.data.local.entity.Perfil
 import br.com.fiap.letsflow.data.local.entity.Usuario
 import br.com.fiap.letsflow.data.repository.DocumentoRepository
-import br.com.fiap.letsflow.ui.documento.DocumentosScreen
-import br.com.fiap.letsflow.ui.documento.DocumentoResumo
+import br.com.fiap.letsflow.ui.documento.DocumentosRota
 import br.com.fiap.letsflow.ui.login.LoginScreen
 import br.com.fiap.letsflow.ui.assinatura.DocumentosRecebidosScreen
 
@@ -43,15 +42,17 @@ import br.com.fiap.letsflow.ui.documento.DetalhesDocumentoScreen
 import br.com.fiap.letsflow.ui.documento.VisualizarDocumentoAdminRoute
 
 
-import br.com.fiap.letsflow.data.repository.UsuarioRepository
-import br.com.fiap.letsflow.ui.signatario.ListaSignatariosScreen
-import br.com.fiap.letsflow.ui.signatario.FormularioSignatarioScreen
+import br.com.fiap.letsflow.ui.signatario.FormularioSignatarioRota
+import br.com.fiap.letsflow.ui.signatario.ListaSignatariosRota
 import android.widget.Toast
 
 import br.com.fiap.letsflow.ui.assinatura.AssinaturaScreen
 import br.com.fiap.letsflow.ui.assinatura.VisualizarDocumentoScreen as VisualizarDocumentoSignatarioScreen
 
 
+
+// Chave usada para o formulário avisar a tela anterior que um signatário foi salvo
+private const val CHAVE_SIGNATARIO_SALVO = "signatarioSalvo"
 
 @Composable
 fun LetsFlowNavHost() {
@@ -62,11 +63,6 @@ fun LetsFlowNavHost() {
     val banco = remember(contexto) {
         AppDatabase.getInstance(contexto)
     }
-
-    val usuarioRepository = remember(banco) {
-        UsuarioRepository(banco.usuarioDao())
-    }
-
 
     val documentoRepository = remember(banco) {
         DocumentoRepository(
@@ -129,38 +125,9 @@ fun LetsFlowNavHost() {
 
             if (admin?.perfil == Perfil.ADMIN) {
 
-                val fluxo = remember(admin.id) {
-                    documentoRepository.listarDoAdmin(admin.id)
-                }
-
-                val documentos by fluxo.collectAsState(
-                    initial = emptyList()
-                )
-
-                var resumos by remember {
-                    mutableStateOf(
-                        emptyList<DocumentoResumo>()
-                    )
-                }
-
-                LaunchedEffect(documentos) {
-                    resumos = documentos.map { documento ->
-
-                        val pessoas =
-                            documentoRepository.listarSignatarios(
-                                documento.id
-                            )
-
-                        DocumentoResumo(
-                            documento = documento,
-                            totalSignatarios = pessoas.size,
-                            assinados = pessoas.count { it.assinado }
-                        )
-                    }
-                }
-
-                DocumentosScreen(
-                    documentos = resumos,
+                // Rota da Ani: busca os documentos do Admin com o "X de Y" e mostra a tela da Mari
+                DocumentosRota(
+                    adminId = admin.id,
 
                     onNovoDocumento = {
                         navController.navigate(
@@ -776,41 +743,38 @@ fun LetsFlowNavHost() {
         }
 
         // 10. LISTA DE SIGNATÁRIOS
-        composable(Rotas.LISTA_SIGNATARIOS) {
+        composable(Rotas.LISTA_SIGNATARIOS) { entrada ->
 
             val admin = usuarioLogado
 
             if (admin?.perfil == Perfil.ADMIN) {
 
-                val fluxoSignatarios = remember(
-                    usuarioRepository
-                ) {
-                    usuarioRepository.listarSignatarios()
-                }
+                // O formulário avisa pelo savedStateHandle quando salvou, para a lista mostrar "Signatário salvo"
+                val avisoSalvo by entrada.savedStateHandle
+                    .getStateFlow(CHAVE_SIGNATARIO_SALVO, false)
+                    .collectAsState()
 
-                val signatarios by fluxoSignatarios.collectAsState(
-                    initial = emptyList()
-                )
-
-                ListaSignatariosScreen(
-                    signatarios = signatarios,
-
+                // Rota da Ani: busca os signatários no banco e mostra a tela da Mari
+                ListaSignatariosRota(
                     onVoltar = {
                         navController.popBackStack()
                     },
 
                     onCadastrar = {
+                        entrada.savedStateHandle[CHAVE_SIGNATARIO_SALVO] = false
                         navController.navigate(
                             Rotas.CADASTRAR_SIGNATARIO
                         )
                     },
 
-
-                    onEditar = { signatario ->
+                    onEditar = { signatarioId ->
+                        entrada.savedStateHandle[CHAVE_SIGNATARIO_SALVO] = false
                         navController.navigate(
-                            Rotas.editarSignatario(signatario.id)
+                            Rotas.editarSignatario(signatarioId)
                         )
-                    }
+                    },
+
+                    mostrarAvisoSalvo = avisoSalvo
                 )
 
             } else {
@@ -825,59 +789,20 @@ fun LetsFlowNavHost() {
 
             if (admin?.perfil == Perfil.ADMIN) {
 
-                val scope = rememberCoroutineScope()
+                // Rota da Ani: sem signatarioId, cadastra uma pessoa nova
+                FormularioSignatarioRota(
+                    signatarioId = null,
 
-                var erroSalvar by remember {
-                    mutableStateOf<String?>(null)
-                }
-
-                var salvando by remember {
-                    mutableStateOf(false)
-                }
-
-                FormularioSignatarioScreen(
-                    erroDoSalvamento = erroSalvar,
-
-                    onCancelar = {
+                    onSalvo = {
+                        // Avisa a tela anterior (lista ou Novo documento) e volta para ela
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(CHAVE_SIGNATARIO_SALVO, true)
                         navController.popBackStack()
                     },
 
-                    onSalvar = { nome, email, telefone, senha ->
-
-                        if (!salvando) {
-
-                            salvando = true
-                            erroSalvar = null
-
-                            scope.launch {
-
-                                try {
-                                    val resultado =
-                                        usuarioRepository.cadastrarSignatario(
-                                            nome = nome,
-                                            email = email,
-                                            telefone = telefone,
-                                            senha = senha
-                                        )
-
-                                    resultado
-                                        .onSuccess {
-                                            navController.popBackStack()
-                                        }
-                                        .onFailure { erro ->
-                                            erroSalvar = erro.message
-                                                ?: "Não foi possível salvar."
-                                        }
-
-                                } catch (e: Exception) {
-                                    erroSalvar = e.message
-                                        ?: "Erro ao cadastrar signatário."
-
-                                } finally {
-                                    salvando = false
-                                }
-                            }
-                        }
+                    onCancelar = {
+                        navController.popBackStack()
                     }
                 )
 
@@ -903,94 +828,21 @@ fun LetsFlowNavHost() {
 
             if (admin?.perfil == Perfil.ADMIN) {
 
-                val scope = rememberCoroutineScope()
+                // Rota da Ani: com signatarioId, carrega a pessoa e salva com atualizarSignatario
+                FormularioSignatarioRota(
+                    signatarioId = signatarioId,
 
-                var signatario by remember(signatarioId) {
-                    mutableStateOf<Usuario?>(null)
-                }
+                    onSalvo = {
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(CHAVE_SIGNATARIO_SALVO, true)
+                        navController.popBackStack()
+                    },
 
-                var carregando by remember(signatarioId) {
-                    mutableStateOf(true)
-                }
-
-                var erroSalvar by remember(signatarioId) {
-                    mutableStateOf<String?>(null)
-                }
-
-                var salvando by remember(signatarioId) {
-                    mutableStateOf(false)
-                }
-
-                LaunchedEffect(signatarioId) {
-                    try {
-                        val usuario =
-                            usuarioRepository.buscarPorId(signatarioId)
-
-                        if (usuario?.perfil == Perfil.SIGNATARIO) {
-                            signatario = usuario
-                        }
-                    } finally {
-                        carregando = false
+                    onCancelar = {
+                        navController.popBackStack()
                     }
-                }
-
-                when {
-                    carregando -> {
-                        Text("Carregando signatário...")
-                    }
-
-                    signatario == null -> {
-                        Text("Signatário não encontrado.")
-                    }
-
-                    else -> {
-                        FormularioSignatarioScreen(
-                            signatarioParaEditar = signatario,
-                            erroDoSalvamento = erroSalvar,
-
-                            onCancelar = {
-                                navController.popBackStack()
-                            },
-
-                            onSalvar = { nome, email, telefone, senha ->
-
-                                if (!salvando) {
-                                    salvando = true
-                                    erroSalvar = null
-
-                                    scope.launch {
-                                        try {
-                                            val resultado =
-                                                usuarioRepository.editarSignatario(
-                                                    id = signatarioId,
-                                                    nome = nome,
-                                                    email = email,
-                                                    telefone = telefone,
-                                                    senha = senha
-                                                )
-
-                                            resultado
-                                                .onSuccess {
-                                                    navController.popBackStack()
-                                                }
-                                                .onFailure { erro ->
-                                                    erroSalvar = erro.message
-                                                        ?: "Erro ao salvar alterações."
-                                                }
-
-                                        } catch (e: Exception) {
-                                            erroSalvar = e.message
-                                                ?: "Não foi possível editar."
-
-                                        } finally {
-                                            salvando = false
-                                        }
-                                    }
-                                }
-                            }
-                        )
-                    }
-                }
+                )
 
             } else {
                 RedirecionarParaLogin(navController)

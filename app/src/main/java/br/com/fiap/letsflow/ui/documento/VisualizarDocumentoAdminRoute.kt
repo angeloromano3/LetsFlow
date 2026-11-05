@@ -168,7 +168,7 @@ fun VisualizarDocumentoAdminRoute(
                 emptyList()
             }
 
-            VisualizarDocumentoScreen(
+            VisualizarDocumentoAdminScreen(
                 tituloDoDocumento = titulo,
                 paginaAtual = imagemPagina,
                 indicePagina = paginaAtual,
