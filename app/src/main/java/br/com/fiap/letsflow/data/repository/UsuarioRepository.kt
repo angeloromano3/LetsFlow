@@ -33,4 +33,36 @@ class UsuarioRepository(private val dao: UsuarioDao) {
         )
         return Result.success(id)
     }
+
+    // Edita um signatário com as mesmas validações do cadastro; senha vazia mantém a atual
+    suspend fun atualizarSignatario(
+        id: Long,
+        nome: String,
+        email: String,
+        telefone: String,
+        senha: String
+    ): Result<Unit> {
+        val emailLimpo = email.trim().lowercase()
+        if (nome.isBlank()) return Result.failure(Exception("Informe o nome completo"))
+        if (!emailLimpo.contains("@")) return Result.failure(Exception("E-mail inválido"))
+        if (senha.isNotEmpty() && senha.length < 6) {
+            return Result.failure(Exception("A senha precisa ter pelo menos 6 caracteres"))
+        }
+        val atual = dao.buscarPorId(id) ?: return Result.failure(Exception("Signatário não encontrado"))
+        // O e-mail só pode repetir se for o da própria pessoa
+        val donoDoEmail = dao.buscarPorEmail(emailLimpo)
+        if (donoDoEmail != null && donoDoEmail.id != id) {
+            return Result.failure(Exception("E-mail já cadastrado"))
+        }
+
+        dao.atualizar(
+            atual.copy(
+                nomeCompleto = nome.trim(),
+                email = emailLimpo,
+                telefone = telefone.trim(),
+                senha = senha.ifEmpty { atual.senha }
+            )
+        )
+        return Result.success(Unit)
+    }
 }
