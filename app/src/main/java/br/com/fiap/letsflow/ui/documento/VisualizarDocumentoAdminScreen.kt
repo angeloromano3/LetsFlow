@@ -1,6 +1,7 @@
 package br.com.fiap.letsflow.ui.documento
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,7 +55,8 @@ data class CampoVisualizacaoUi(
     val posicaoX: Float,
     val posicaoY: Float,
     val largura: Float,
-    val altura: Float
+    val altura: Float,
+    val caminhoAssinatura: String? = null // Imagem da assinatura; nulo enquanto a pessoa não assinou
 )
 
 // Modo somente leitura: mostra a página do PDF e os campos, sem permitir mexer em nada
@@ -195,8 +198,32 @@ private fun CampoSomenteLeitura(
     larguraDaPagina: Dp,
     alturaDaPagina: Dp
 ) {
+
     val cores = LetsFlowTheme.cores
+
     val formato = RoundedCornerShape(8.dp)
+
+    // Quem já assinou aparece com a imagem da assinatura no lugar da caixinha
+    val imagemAssinatura = remember(campo.caminhoAssinatura) {
+        campo.caminhoAssinatura?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+    }
+    if (imagemAssinatura != null) {
+        Image(
+            bitmap = imagemAssinatura,
+            contentDescription = "Assinatura de ${campo.rotulo}",
+            contentScale = ContentScale.Fit, // Mantém a proporção da assinatura dentro do campo
+            modifier = Modifier
+                .offset(
+                    x = larguraDaPagina * campo.posicaoX,
+                    y = alturaDaPagina * campo.posicaoY
+                )
+                .size(
+                    width = larguraDaPagina * campo.largura,
+                    height = alturaDaPagina * campo.altura
+                )
+        )
+        return // Já desenhou a assinatura, não precisa da caixinha
+    }
 
     Box(
         modifier = Modifier
