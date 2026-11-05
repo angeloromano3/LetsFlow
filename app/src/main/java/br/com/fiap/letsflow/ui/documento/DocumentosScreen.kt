@@ -319,7 +319,7 @@ private fun LinhaDocumento(
                     color = if (documento.status == StatusDocumento.CONCLUIDO) {
                         cores.concluido
                     } else {
-                        cores.acao
+                        cores.pendente
                     },
                     textAlign = TextAlign.End
                 )
