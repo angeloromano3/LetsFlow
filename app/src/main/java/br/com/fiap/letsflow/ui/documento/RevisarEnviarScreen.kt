@@ -128,7 +128,7 @@ private fun RevisarEnviarConteudo(
 
             CabecalhoDaTelaDeResumo(
                 titulo = "Revisar e enviar",
-                subtitulo = "Etapa 4 de 4 · Confira antes de confirmar",
+                subtitulo = "Etapa 3 de 3 · Confira antes de confirmar",
                 onVoltar = onVoltar
             )
 
